@@ -15,7 +15,7 @@ AKAR = os.path.dirname(os.path.abspath(__file__))
 if AKAR not in sys.path:
     sys.path.insert(0, AKAR)
 
-from film import dunia_kota, shot, waktu  # noqa: E402
+from film import dunia_kota, kurir, motor, shot, waktu  # noqa: E402
 
 SEED = 75
 BERKAS = os.path.join(AKAR, "film.blend")
@@ -58,6 +58,16 @@ def main():
     kosongkan()
     atur_scene(vertikal)
     dunia_kota.bangun()
+    kol_motor = bpy.data.collections.new("Motor")
+    bpy.context.scene.collection.children.link(kol_motor)
+    # Untuk sekarang motor diam di Jl. Kenanga (shot 1), menghadap +Y
+    m = motor.buat_motor(kol_motor)
+    motor.taruh(m, dunia_kota.TITIK["motor_kenanga"])
+    # Mas Adit duduk di motor (shot 1); simulasi ponco untuk shot 1 saja
+    kol_kurir = bpy.data.collections.new("Kurir")
+    bpy.context.scene.collection.children.link(kol_kurir)
+    s1 = waktu.SHOTS[0]
+    kurir.duduk_di(kurir.buat_kurir(kol_kurir), m, s1.frame_mulai, s1.frame_selesai)
     shot.bangun_shot()
     bpy.ops.wm.save_as_mainfile(filepath=BERKAS)
     print(f"[bangun] {BERKAS} tersimpan, {len(waktu.SHOTS)} shot, "

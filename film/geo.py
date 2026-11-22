@@ -100,6 +100,18 @@ class Gabung:
             qx, qy, qz = (px + arah.x * sx * 0.72, py + arah.y * sy * 0.72, pz + arah.z * sz * 0.72)
             self.poly([(qx + x * sx * r, qy + y * sy * r, qz + z * sz * r) for x, y, z in kv], kf)
 
+    def tabung(self, p0, p1, r, n=10):
+        """Tabung bulat dari p0 ke p1 (pipa, garpu, setang)."""
+        p0, p1 = Vector(p0), Vector(p1)
+        sumbu = (p1 - p0).normalized()
+        bantu = Vector((0, 0, 1)) if abs(sumbu.z) < 0.9 else Vector((1, 0, 0))
+        u = sumbu.cross(bantu).normalized()
+        w = sumbu.cross(u).normalized()
+        ring = [(u * math.cos(2 * math.pi * i / n) + w * math.sin(2 * math.pi * i / n)) * r for i in range(n)]
+        muka = [(i, (i + 1) % n, n + (i + 1) % n, n + i) for i in range(n)]
+        muka += [tuple(reversed(range(n))), tuple(range(n, 2 * n))]
+        self.poly([p0 + q for q in ring] + [p1 + q for q in ring], muka)
+
     def batang(self, p0, p1, tebal):
         """Batang persegi dari p0 ke p1 (siku, pipa miring)."""
         p0, p1 = Vector(p0), Vector(p1)

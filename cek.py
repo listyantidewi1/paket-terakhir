@@ -4,6 +4,11 @@ Jalankan (setelah bangun.py):
     blender --background --python cek.py                    # frame tengah tiap shot
     blender --background --python cek.py -- 1 200 700       # frame pilihan
     blender --background --python cek.py -- --shot 1 2 3 4  # frame tengah shot pilihan
+    blender --background --python cek.py -- --shot 1 --motor --kurir  # ditambah close-up
+
+--motor : motor dari depan-kanan ke cek/motor.png
+--kurir : kurir dari samping (kanan) ke cek/kurir.png
+Simulasi kain (ponco) dihitung berurutan dari awal cache-nya sebelum render.
 
 Hasil: cek/frame_XXXX.png dan cek/lembar.png.
 Setiap gambar diberi cap nomor shot dan frame (fitur stamp Blender),
@@ -64,8 +69,36 @@ def atur_render_kecil(scene):
     r.stamp_font_size = 20
 
 
+_KAIN = {"terakhir": None}
+
+
+def kain_sampai(scene, frame):
+    """Jalankan simulasi kain frame demi frame sampai `frame`.
+
+    Simulasi kain hanya benar bila dihitung berurutan dari awal cache-nya
+    (termasuk frame pra-gulir negatif). Frame yang sudah dihitung tersimpan
+    di cache memori, jadi render frame berikutnya melanjutkan saja.
+    """
+    mulai = None
+    for o in scene.objects:
+        for m in o.modifiers:
+            if m.type == "CLOTH" and m.point_cache.frame_start <= frame <= m.point_cache.frame_end:
+                a = m.point_cache.frame_start
+                mulai = a if mulai is None else min(mulai, a)
+    if mulai is None:
+        return
+    t = _KAIN["terakhir"]
+    dari = t + 1 if t is not None and mulai <= t < frame else mulai
+    if t is None or t < frame:
+        print(f"[cek] simulasi kain frame {dari} sampai {frame}")
+        for f in range(dari, frame + 1):
+            scene.frame_set(f)
+        _KAIN["terakhir"] = frame
+
+
 def render_frame(scene, frame):
     s = shot_untuk(frame)
+    kain_sampai(scene, frame)
     scene.frame_set(frame)
     scene.render.stamp_note_text = f"{s.nama}  frame {frame}  ({s.judul})"
     jalur = os.path.join(FOLDER, f"frame_{frame:04d}.png")
@@ -107,6 +140,52 @@ def susun_lembar(jalur_semua):
     print(f"[cek] lembar kontak: {img.filepath_raw} ({W}x{H}, {len(gambar)} frame)")
 
 
+# Close-up: nama objek acuan, posisi kamera dan sasaran dalam koordinat motor, lensa
+DEKAT = {
+    "motor": ("Motor", (2.3, 2.6, 1.3), (0.0, -0.15, 0.65), 35, "Motor dari dekat"),
+    "kurir": ("Motor", (3.4, -0.1, 1.2), (0.0, -0.1, 1.0), 32, "Kurir dari samping"),
+}
+
+
+def render_dekat(scene, frame, jenis):
+    """Close-up dengan kamera sementara (tidak disimpan ke film.blend).
+
+    Ditambah satu lampu bantu netral yang lembut supaya bentuk bisa dinilai;
+    lampu ini hanya ada saat cek, tidak ada di film.
+    """
+    from mathutils import Vector
+    nama, dari, ke, lensa, catatan = DEKAT[jenis]
+    acuan = bpy.data.objects.get(nama)
+    if acuan is None:
+        print(f"[cek] tidak ada objek {nama}")
+        return
+    kain_sampai(scene, frame)
+    scene.frame_set(frame)
+    mw = acuan.matrix_world
+    data = bpy.data.cameras.new(f"Cek_{jenis}")
+    data.lens = lensa
+    cam = bpy.data.objects.new(f"Cek_{jenis}", data)
+    scene.collection.objects.link(cam)
+    cam.location = mw @ Vector(dari)
+    cam.rotation_euler = (mw @ Vector(ke) - cam.location).to_track_quat("-Z", "Y").to_euler()
+    bantu = bpy.data.lights.new(f"Cek_Lampu_{jenis}", type="AREA")
+    bantu.energy = 60.0
+    bantu.size = 2.0
+    bantu.color = (0.85, 0.9, 1.0)
+    lampu = bpy.data.objects.new(f"Cek_Lampu_{jenis}", bantu)
+    scene.collection.objects.link(lampu)
+    lampu.location = mw @ (Vector(dari) * 0.8 + Vector((0, -1.2, 1.0)))
+    lampu.rotation_euler = (mw @ Vector(ke) - lampu.location).to_track_quat("-Z", "Y").to_euler()
+    lampu.visible_camera = False
+    scene.timeline_markers.clear()  # supaya marker tidak mengganti kamera
+    scene.camera = cam
+    scene.render.stamp_note_text = f"{catatan}  frame {frame}"
+    scene.render.filepath = os.path.join(FOLDER, f"{jenis}.png")
+    bpy.ops.render.render(write_still=True)
+    scene.collection.objects.unlink(lampu)
+    print(f"[cek] {scene.render.filepath}")
+
+
 def main():
     if not os.path.exists(BERKAS):
         sys.exit("[cek] film.blend belum ada. Jalankan dulu: "
@@ -115,6 +194,8 @@ def main():
     os.makedirs(FOLDER, exist_ok=True)
 
     arg = argumen()
+    dekat = [j for j in DEKAT if f"--{j}" in arg]
+    arg = [a for a in arg if a.lstrip("-") not in DEKAT]
     if "--shot" in arg:
         pilih = {int(a) for a in arg[arg.index("--shot") + 1:]}
         frames = [s.frame_tengah for s in waktu.SHOTS if s.nomor in pilih]
@@ -122,7 +203,10 @@ def main():
         frames = [int(a) for a in arg] or [s.frame_tengah for s in waktu.SHOTS]
     scene = bpy.context.scene
     atur_render_kecil(scene)
-    susun_lembar([render_frame(scene, f) for f in frames])
+    if frames and not (dekat and not arg):
+        susun_lembar([render_frame(scene, f) for f in frames])
+    for jenis in dekat:
+        render_dekat(scene, frames[0] if frames else waktu.SHOTS[0].frame_tengah, jenis)
 
 
 main()
