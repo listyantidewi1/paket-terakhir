@@ -44,6 +44,8 @@ TITIK = {
 
 
 def bangun():
+    GENANGAN.clear()
+    POLISI_TIDUR.clear()
     rng = random.Random(SEED)
     scene = bpy.context.scene
     bahan.siapkan()
@@ -110,8 +112,26 @@ def _lampu_jalan(k, nama, kaki, arah, tinggi=7.5, lengan=1.8, daya=2400, sudut=7
 UKURAN_GENANGAN = 0.55  # pusat genangan tetap; hanya jari-jarinya diperkecil
 
 
+# Genangan yang tercatat (untuk cipratan roda): pusat dan poligon tepi (x, y)
+GENANGAN = []
+# Polisi tidur yang tercatat (untuk tinggi permukaan jalan): (y, x0, x1, lebar, tinggi)
+POLISI_TIDUR = []
+
+
 def _genangan(k, rng, pusat, jari, z=0.004):
-    k["genangan"].cakram(pusat, jari * UKURAN_GENANGAN, z, rng)
+    g = k["genangan"]
+    g.cakram(pusat, jari * UKURAN_GENANGAN, z, rng)
+    tepi = [(v[0], v[1]) for v in g.v[-40:]]  # cakram: satu titik pusat lalu 40 titik tepi
+    GENANGAN.append({"pusat": tuple(pusat), "tepi": tepi, "z": z})
+
+
+def tinggi_permukaan(x, y):
+    """Tinggi jalan di (x, y) karena polisi tidur; 0 di tempat lain."""
+    for yp, x0, x1, lebar, tinggi in POLISI_TIDUR:
+        t = (y - (yp - lebar / 2)) / lebar
+        if x0 <= x <= x1 and 0.0 <= t <= 1.0:
+            return tinggi * math.sin(math.pi * t)
+    return 0.0
 
 
 def _hujan(kol, nama, x0, x1, y0, y1, z0, jumlah, rng, tinggi=10.0, laju=9.0):
@@ -328,6 +348,7 @@ def _kenanga(rng, kota):
 
 
 def _polisi_tidur(k, y, x0, x1, lebar=0.9, tinggi=0.08, n=8):
+    POLISI_TIDUR.append((y, x0, x1, lebar, tinggi))
     titik = []
     for x in (x0, x1):
         for i in range(n + 1):

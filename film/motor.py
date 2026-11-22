@@ -493,32 +493,56 @@ def taruh(motor, lokasi, arah_derajat=0.0):
     motor.rotation_euler = (0, 0, math.radians(arah_derajat))
 
 
-def animasi_jalan(motor, kunci):
+def animasi_jalan(motor, kunci, halus=True, permukaan=None):
     """Gerakkan motor lewat titik kunci, dan isi jarak_tempuh frame demi frame.
 
-    kunci: daftar (frame, (x, y, z), arah_derajat), frame naik. Di antara dua
-    kunci posisi dihaluskan (smoothstep). Jarak dijumlahkan dari perpindahan
-    nyata tiap frame, jadi putaran roda selalu cocok dengan jalannya motor.
+    kunci: daftar (frame, (x, y, z), arah_derajat), frame naik.
+    halus: True = percepat/perlambat (smoothstep) di antara kunci,
+           False = kecepatan tetap (linear).
+    permukaan: fungsi (x, y) -> tinggi jalan (polisi tidur). Bila ada, motor
+           naik dan mengangguk mengikuti tinggi di bawah roda depan dan belakang.
+    Jarak dijumlahkan dari perpindahan nyata tiap frame, jadi putaran roda
+    selalu cocok dengan jalannya motor.
+
+    Mengembalikan daftar (frame, lokasi, arah_derajat) per frame.
     """
     jarak = 0.0
     sebelum = None
+    jalur = []
     for (f0, p0, a0), (f1, p1, a1) in zip(kunci, kunci[1:]):
         p0, p1 = Vector(p0), Vector(p1)
         for f in range(int(f0), int(f1) + 1):
             if sebelum is not None and f == sebelum[0]:
                 continue
             t = (f - f0) / (f1 - f0)
-            t = t * t * (3 - 2 * t)
+            if halus:
+                t = t * t * (3 - 2 * t)
             p = p0.lerp(p1, t)
+            arah = math.radians(a0 + (a1 - a0) * t)
+            angguk = 0.0
+            if permukaan is not None:
+                maju = Vector((-math.sin(arah), math.cos(arah), 0))
+                depan, belakang = p + maju * Y_DEPAN, p + maju * Y_BELAKANG
+                h_depan, h_belakang = permukaan(depan.x, depan.y), permukaan(belakang.x, belakang.y)
+                p = p + Vector((0, 0, (h_depan + h_belakang) / 2))
+                angguk = math.atan2(h_depan - h_belakang, JARAK_SUMBU)
             langkah = (p - sebelum[1]).length if sebelum is not None else 0.0
             jarak += langkah
             motor["kecepatan"] = langkah * bpy.context.scene.render.fps
             motor.keyframe_insert('["kecepatan"]', frame=f)
             motor.location = p
-            motor.rotation_euler = (0, 0, math.radians(a0 + (a1 - a0) * t))
+            motor.rotation_euler = (angguk, 0, arah)
             motor["jarak_tempuh"] = jarak
             motor.keyframe_insert("location", frame=f)
-            motor.keyframe_insert("rotation_euler", index=2, frame=f)
+            motor.keyframe_insert("rotation_euler", frame=f)
             motor.keyframe_insert('["jarak_tempuh"]', frame=f)
             sebelum = (f, p)
-    return jarak
+            jalur.append((f, p.copy(), math.degrees(arah)))
+    # Di antara frame bulat juga linear (motion blur, sub-frame). Setelah kunci
+    # terakhir motor tetap diam (ekstrapolasi konstan), tidak melaju ke shot lain.
+    from bpy_extras import anim_utils
+    ad = motor.animation_data
+    for fc in anim_utils.action_get_channelbag_for_slot(ad.action, ad.action_slot).fcurves:
+        for kp in fc.keyframe_points:
+            kp.interpolation = "LINEAR"
+    return jalur

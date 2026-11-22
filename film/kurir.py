@@ -138,6 +138,31 @@ POSE = {
         "ik": {"ik_tangan.L": (-0.21, 0.03, 0.87), "ik_tangan.R": (0.2, 0.1, 0.9),
                "ik_kaki.L": (-0.1, 0, 0.1), "ik_kaki.R": (0.1, 0, 0.1)},
     },
+    # Mengambil kucing dari atas boks (boks di depan kurir, setinggi dada)
+    "ambil_kucing": {
+        "pinggul": (0, 0, 0.94), "fk": {"punggung": (-8, 0, 0), "kepala": (-10, 0, 0)},
+        "ik": {"ik_tangan.L": (-0.1, 0.42, 1.53), "ik_tangan.R": (0.1, 0.42, 1.53),
+               "ik_kaki.L": (-0.11, 0, 0.1), "ik_kaki.R": (0.11, 0, 0.1),
+               "siku.L": (-0.6, -0.1, 1.2), "siku.R": (0.6, -0.1, 1.2)},
+        "ik_rot": {"ik_tangan.L": (90, 0, -80), "ik_tangan.R": (90, 0, 80)},
+    },
+    # Menggendong kucing di depan dada dengan dua tangan
+    "bawa_kucing": {
+        "pinggul": (0, 0, 0.94), "fk": {"punggung": (3, 0, 0)},
+        "ik": {"ik_tangan.L": (-0.11, 0.3, 1.18), "ik_tangan.R": (0.11, 0.3, 1.18),
+               "ik_kaki.L": (-0.11, 0, 0.1), "ik_kaki.R": (0.11, 0, 0.1),
+               "siku.L": (-0.6, -0.2, 1.0), "siku.R": (0.6, -0.2, 1.0)},
+        "ik_rot": {"ik_tangan.L": (90, 0, -80), "ik_tangan.R": (90, 0, 80)},
+    },
+    # Menaruh kucing di bangku: membungkuk, tangan rendah di depan
+    "taruh_kucing": {
+        "pinggul": (0, -0.08, 0.84), "pinggul_rot": (-28, 0, 0), "fk": {"punggung": (-10, 0, 0)},
+        "ik": {"ik_tangan.L": (-0.11, 0.45, 0.83), "ik_tangan.R": (0.11, 0.45, 0.83),
+               "ik_kaki.L": (-0.13, 0.05, 0.1), "ik_kaki.R": (0.13, 0.05, 0.1),
+               "lutut.L": (-0.2, 0.9, 0.6), "lutut.R": (0.2, 0.9, 0.6),
+               "siku.L": (-0.6, -0.1, 0.9), "siku.R": (0.6, -0.1, 0.9)},
+        "ik_rot": {"ik_tangan.L": (90, 0, -80), "ik_tangan.R": (90, 0, 80)},
+    },
     # Mengetuk pintu dengan tangan kanan; tangan kiri memegang paket di pinggang
     "ketuk_pintu": {
         "pinggul": (0, 0, 0.94),
@@ -348,7 +373,7 @@ def _helm(kol, arm):
     return helm
 
 
-def _ponco(kol, arm):
+def _ponco(kol, arm, nama="Kurir_Ponco"):
     """Ponco berbentuk lonceng dari kerah ke lutut, dibobot ke tulang terdekat."""
     # Kerah kecil hanya di leher; di ketinggian bahu (puncak bahu z 1,48, x sampai
     # 0,22) ponco sudah lebar supaya bahu dan lengan selalu di dalam
@@ -376,11 +401,11 @@ def _ponco(kol, arm):
             titik.append(Vector((rx * math.sin(s), ry * math.cos(s) + 0.01 + maju, z)))
     muka = [(j * n + i, j * n + (i + 1) % n, (j + 1) * n + (i + 1) % n, (j + 1) * n + i)
             for j in range(len(profil) - 1) for i in range(n)]
-    mesh = bpy.data.meshes.new("Kurir_Ponco")
+    mesh = bpy.data.meshes.new(nama)
     mesh.from_pydata([tuple(p) for p in titik], [], muka)
     mesh.materials.append(bpy.data.materials["ponco_kuning"])
     mesh.shade_smooth()
-    obj = bpy.data.objects.new("Kurir_Ponco", mesh)
+    obj = bpy.data.objects.new(nama, mesh)
     kol.objects.link(obj)
 
     # Bobot: invers jarak ke ruas tulang badan dan kaki terdekat (maks. 3 tulang).
@@ -574,7 +599,50 @@ def duduk_di(arm, motor, frame_mulai, frame_selesai):
             pasang_tumbukan(o, 0.008)
 
 
-def atur_kain(mulai, selesai):
-    kain = bpy.data.objects["Kurir_Ponco"].modifiers["Kain"]
+def atur_kain(mulai, selesai, nama="Kurir_Ponco"):
+    kain = bpy.data.objects[nama].modifiers["Kain"]
     kain.point_cache.frame_start = mulai
     kain.point_cache.frame_end = selesai
+
+
+# Berjalan sambil menggendong: kaki dari pose jalan, tangan dari bawa_kucing
+for _sisi in ("kiri", "kanan"):
+    _j = POSE[f"jalan_{_sisi}"]
+    POSE[f"jalan_bawa_{_sisi}"] = {
+        **_j, "fk": {"punggung": (3, 0, 0)},
+        "ik": {**{k: v for k, v in _j["ik"].items() if k.startswith("ik_kaki")}, **POSE["bawa_kucing"]["ik"],
+               **{k: v for k, v in _j["ik"].items() if k.startswith("ik_kaki")}},
+        "ik_rot": {**{k: v for k, v in _j.get("ik_rot", {}).items() if k.startswith("ik_kaki")},
+                   **POSE["bawa_kucing"]["ik_rot"]},
+    }
+
+
+def kunci_tempat(arm, frame, lokasi, arah_derajat):
+    """Tempat dan arah hadap kurir (koordinat induk, biasanya motor) pada frame."""
+    arm.location = lokasi
+    arm.rotation_euler = (0, 0, math.radians(arah_derajat))
+    arm.keyframe_insert("location", frame=frame)
+    arm.keyframe_insert("rotation_euler", index=2, frame=frame)
+
+
+def ponco_shot(kol, arm, nama, mulai, selesai):
+    """Ponco tambahan dengan cache simulasinya sendiri untuk satu shot.
+
+    Cache simulasi kain hanya satu rentang frame, dan di batas shot kurir
+    berpindah tempat (kain akan meledak). Jadi tiap shot memakai ponco sendiri
+    dan hanya tampil di render pada shot-nya (lihat tampil_di).
+    """
+    obj = _ponco(kol, arm, nama)
+    atur_kain(mulai, selesai, nama)
+    return obj
+
+
+def tampil_di(obj, frame_awal, frame_akhir):
+    """Objek hanya muncul di render dari frame_awal sampai frame_akhir.
+
+    Hanya visibilitas render; di viewport tetap ada supaya simulasinya tetap
+    dihitung saat frame dijalankan berurutan.
+    """
+    for f, sembunyi in ((frame_awal - 1, True), (frame_awal, False), (frame_akhir, False), (frame_akhir + 1, True)):
+        obj.hide_render = sembunyi
+        obj.keyframe_insert("hide_render", frame=f)

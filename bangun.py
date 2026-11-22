@@ -15,7 +15,7 @@ AKAR = os.path.dirname(os.path.abspath(__file__))
 if AKAR not in sys.path:
     sys.path.insert(0, AKAR)
 
-from film import dunia_kota, kurir, motor, shot, waktu  # noqa: E402
+from film import adegan, cipratan, dunia_kota, kucing, kurir, motor, shot, waktu  # noqa: E402
 
 SEED = 75
 BERKAS = os.path.join(AKAR, "film.blend")
@@ -52,6 +52,31 @@ def atur_scene(vertikal):
     scene.view_settings.exposure = 0.4
 
 
+LAJU_SHOT1 = 7.0  # m/s (25 km/jam), kecepatan tetap
+
+
+def shot1_motor(m, s1, kol):
+    """Shot 1: motor melaju lurus di lajur kiri Jl. Kenanga menjauhi kamera.
+
+    Motor sudah melaju sejak awal pra-gulir kain, supaya di frame pertama
+    shot ponco sudah berkibar wajar (tidak tersentak oleh start mendadak).
+    Di frame pertama shot motor berada di TITIK["motor_kenanga"].
+    """
+    awal = dunia_kota.TITIK["motor_kenanga"]
+    f0 = s1.frame_mulai - kurir.MULAI_KAIN
+    f1 = s1.frame_selesai
+
+    def titik(f):
+        return (awal.x, awal.y + LAJU_SHOT1 * (f - s1.frame_mulai) / waktu.FPS, 0.0)
+
+    jalur = motor.animasi_jalan(m, [(f0, titik(f0), 0.0), (f1, titik(f1), 0.0)], halus=False,
+                                permukaan=dunia_kota.tinggi_permukaan)
+    kejadian = cipratan.cari_kejadian(jalur, dunia_kota.GENANGAN, s1.frame_mulai, s1.frame_selesai)
+    cipratan.buat(kol, m, kejadian)
+    for roda, a, b, g in kejadian:
+        print(f"[bangun] cipratan roda {roda} frame {a}-{b} di genangan {dunia_kota.GENANGAN[g]['pusat']}")
+
+
 def main():
     vertikal = "--vertikal" in argumen()
     random.seed(SEED)
@@ -60,14 +85,20 @@ def main():
     dunia_kota.bangun()
     kol_motor = bpy.data.collections.new("Motor")
     bpy.context.scene.collection.children.link(kol_motor)
-    # Untuk sekarang motor diam di Jl. Kenanga (shot 1), menghadap +Y
     m = motor.buat_motor(kol_motor)
-    motor.taruh(m, dunia_kota.TITIK["motor_kenanga"])
-    # Mas Adit duduk di motor (shot 1); simulasi ponco untuk shot 1 saja
+    # Mas Adit duduk di motor; simulasi ponco untuk shot 1 saja
     kol_kurir = bpy.data.collections.new("Kurir")
     bpy.context.scene.collection.children.link(kol_kurir)
     s1 = waktu.SHOTS[0]
-    kurir.duduk_di(kurir.buat_kurir(kol_kurir), m, s1.frame_mulai, s1.frame_selesai)
+    arm = kurir.buat_kurir(kol_kurir)
+    kurir.duduk_di(arm, m, s1.frame_mulai, s1.frame_selesai)
+    shot1_motor(m, s1, kol_motor)
+    # Shot 3: kucing oren, lampu merah ke hijau, jeda 1 detik
+    kol_kucing = bpy.data.collections.new("Kucing")
+    bpy.context.scene.collection.children.link(kol_kucing)
+    kc = kucing.buat_kucing(kol_kucing)
+    adegan.shot3(m, arm, kc, kol_kurir)
+    print(f"[bangun] kucing: {kc['jumlah_helai_bulu']} helai bulu")
     shot.bangun_shot()
     bpy.ops.wm.save_as_mainfile(filepath=BERKAS)
     print(f"[bangun] {BERKAS} tersimpan, {len(waktu.SHOTS)} shot, "
