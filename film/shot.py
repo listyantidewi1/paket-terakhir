@@ -33,15 +33,16 @@ def _kamera_rumah():
         return {}
     P, luar, pintu = T["teras_tujuan"], T["pintu_keluar"], T["pintu_tujuan"]
     kanan = (-luar).cross(Vector((0, 0, 1))).normalized()  # kanan kurir yang menghadap pintu
+    # Posisi dari pencarian otomatis (proyeksi ke layar + uji penghalang dengan sinar):
+    # shot 6 memuat seluruh badan kurir; shot 7 menaruh kepala dan bahu kurir di
+    # sepertiga kiri, kue dan kepala anak di tengah tanpa terhalang.
+    P7 = P - kanan * 0.2  # di shot 7 kurir bergeser 20 cm ke kirinya (adegan.shot67)
+    tengah7 = T["lantai_dalam"] + luar * 0.11 + Vector((0, 0, 0.86))  # antara kue dan kepala anak
     return {
-        # Statis dari belakang kurir, sedikit low angle; kamera tidak pernah ke depan kurir
-        # (di dalam halaman, di depan tiang gerbang dan tiang kanopi)
-        # Kamera agak ke kanan supaya pintu dan celah cahayanya terlihat di samping kurir
-        6: (P + luar * 1.6 + kanan * 0.65 + Vector((0, 0, 0.95)), pintu + Vector((0, 0, 1.25)), 26),
-        # Over-the-shoulder dari belakang bahu kanan kurir: bahu (dan kembang
-        # ponconya) hanya di sisi kiri frame, siluet anak dan kue di tengah
-        7: (P + luar * 1.2 + kanan * 1.15 + Vector((0, 0, 1.75)),
-            T["lantai_dalam"] + Vector((0, 0, 0.75)), 35),
+        # Statis dari belakang kurir, rendah; seluruh badan masuk frame
+        6: (P + luar * 1.8 + kanan * 0.6 + Vector((0, 0, 0.8)), P + Vector((0, 0, 0.95)) - luar * 0.2, 20),
+        # Over-the-shoulder dari belakang bahu kanan kurir
+        7: (P7 + luar * 0.8 + kanan * 0.95 + Vector((0, 0, 1.85)), tengah7, 35),
     }
 
 

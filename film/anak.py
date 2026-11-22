@@ -27,7 +27,9 @@ TINGGI_KUE = 0.74  # tinggi permukaan piring kue dari lantai
 def _bahan():
     if "siluet" in bpy.data.materials:
         return
-    bahan.polos("siluet", (0.004, 0.004, 0.004), kasar=1.0)
+    b = bahan.polos("siluet", (0.002, 0.002, 0.002), kasar=1.0)
+    # Tanpa kilap: tidak memantulkan ruangan yang terang ke arah kamera
+    b.node_tree.nodes["Principled BSDF"].inputs["Specular IOR Level"].default_value = 0.0
     bahan.polos("kue_krim", (0.85, 0.78, 0.66), kasar=0.45)
     bahan.polos("kue_coklat", (0.12, 0.05, 0.025), kasar=0.6)
     bahan.polos("kue_piring", (0.8, 0.8, 0.78), kasar=0.2)
@@ -45,20 +47,39 @@ def buat_anak(kol, lokasi, arah_derajat):
     akar.location = lokasi
     akar.rotation_euler = (0, 0, math.radians(arah_derajat))
 
+    # Anak sekitar 110 cm: kepala bulat berambut, baju sedikit melebar, lengan dan
+    # kaki membulat (sendi bulat), kedua tangan memegang tepi piring di depan dada.
     k = Kanvas("Anak_Siluet", kol)
     g = k["siluet"]
-    for x in (-0.06, 0.06):  # kaki
-        g.tabung((x, 0.0, 0.0), (x, 0.0, 0.5), 0.045, n=10)
-        g.kotak((x - 0.04, -0.03, 0.0), (x + 0.04, 0.09, 0.05))
-    g.bola((0, 0.0, 0.66), (0.13, 0.09, 0.2), rimbun=0)  # badan
-    g.bola((0, 0.0, 0.92), (0.085, 0.095, 0.1), rimbun=0)  # kepala
-    g.bola((0, -0.02, 0.95), (0.095, 0.095, 0.085), rimbun=0)  # rambut, sedikit mengembang
-    for x in (-1, 1):  # lengan: bahu turun lalu menjulur ke depan menyangga piring
-        g.tabung((x * 0.11, 0.0, 0.8), (x * 0.12, 0.08, 0.66), 0.03, n=8)
-        g.tabung((x * 0.12, 0.08, 0.66), (x * 0.1, 0.2, TINGGI_KUE - 0.02), 0.026, n=8)
+    for x in (-0.055, 0.055):  # kaki dan sepatu
+        g.tabung((x, 0.0, 0.04), (x, 0.0, 0.44), 0.042, n=12)
+        g.bola((x, 0.0, 0.44), (0.045, 0.045, 0.045), rimbun=0)
+        g.bola((x, 0.035, 0.035), (0.042, 0.075, 0.035), rimbun=0)
+    g.bola((0, 0.0, 0.5), (0.115, 0.085, 0.08), rimbun=0)  # pinggul, ujung baju
+    g.bola((0, 0.0, 0.65), (0.125, 0.09, 0.17), rimbun=0)  # badan
+    g.bola((0, 0.0, 0.82), (0.135, 0.08, 0.06), rimbun=0)  # bahu membulat
+    g.tabung((0, 0.0, 0.84), (0, 0.005, 0.92), 0.038, n=10)  # leher
+    g.bola((0, 0.01, 1.0), (0.088, 0.095, 0.098), rimbun=0)  # kepala bulat
+    g.bola((0, -0.006, 1.02), (0.097, 0.1, 0.09), rimbun=0)  # rambut
+    rr = random.Random(SEED + 1)
+    for _ in range(14):  # ujung rambut bergumpal kecil di tepi siluet
+        a = rr.uniform(-0.2, 3.34)
+        g.bola((0.096 * math.cos(a), -0.01 - 0.05 * rr.random(), 1.02 + 0.07 * math.sin(a)),
+               (0.022, 0.022, 0.02), rimbun=0)
+    for x in (-1, 1):  # lengan: bahu, siku, tangan di tepi piring
+        bahu = Vector((x * 0.12, 0.0, 0.81))
+        siku = Vector((x * 0.15, 0.06, 0.66))
+        tangan = Vector((x * 0.13, 0.2, TINGGI_KUE + 0.005))
+        g.bola(bahu, (0.042, 0.042, 0.042), rimbun=0)
+        g.tabung(bahu, siku, 0.036, n=12)
+        g.bola(siku, (0.034, 0.034, 0.034), rimbun=0)
+        g.tabung(siku, tangan, 0.03, n=12)
+        g.bola(tangan, (0.03, 0.035, 0.022), rimbun=0)
     k.selesai()
     for o in k.kol.objects:
         o.parent = akar
+        sub = o.modifiers.new("Halus", "SUBSURF")
+        sub.levels = sub.render_levels = 2
 
     # Kue di atas piring, tiga lilin
     kue = Kanvas("Anak_Kue", kol)

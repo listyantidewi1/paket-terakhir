@@ -253,6 +253,29 @@ def periksa_jeda(arm, kc, frame_awal=HIJAU, panjang=JEDA):
     return terbesar, sesudah
 
 
+def _anak_siluet(kol_anak):
+    """Anak hanya disinari dari dalam rumah (dari belakang): siluet gelap.
+
+    Semua lampu lain (lampu teras, lampu jalan, cahaya bulan, dan lainnya)
+    memakai light linking yang mengecualikan tubuh anak. Lampu lilin sudah
+    hanya menerangi kue. Ruangan dibuat lebih terang dan hangat.
+    """
+    tubuh = [o for o in bpy.data.collections["Anak_Siluet"].objects]
+    kecuali = bpy.data.collections.new("Anak_Tanpa_Cahaya_Luar")
+    for o in tubuh:
+        kecuali.objects.link(o)
+    for item in kecuali.collection_objects:
+        item.light_linking.link_state = "EXCLUDE"
+    dalam = ("Rumah_Tujuan_Belakang", "Rumah_Tujuan_Lampu")
+    for L in bpy.data.objects:
+        if L.type != "LIGHT" or L.name in dalam or L.name.startswith("Lampu_Lilin"):
+            continue
+        if L.light_linking.receiver_collection is None:
+            L.light_linking.receiver_collection = kecuali
+    bpy.data.objects["Rumah_Tujuan_Belakang"].data.energy = 260
+    bpy.data.objects["Rumah_Tujuan_Lampu"].data.energy = 220
+
+
 def shot67(m, arm, kol_kurir, kol_anak):
     """Shot 6-7 di teras rumah tujuan.
 
@@ -274,41 +297,36 @@ def shot67(m, arm, kol_kurir, kol_anak):
     arah = math.degrees(math.atan2(luar.x, -luar.y))  # menghadap ke dalam rumah
     kurir.kunci_tempat(arm, pra - 1, lama_lok, lama_rot)
     kurir.kunci_tempat(arm, pra, teras, arah)
-    kurir.kunci_tempat(arm, s7.frame_selesai, teras, arah)
+    kurir.kunci_tempat(arm, s6.frame_selesai, teras, arah)
+    # Shot 7: kurir 20 cm ke kirinya (potongan shot), ambang pintu di kanannya lebih terbuka
+    kiri = inv.to_3x3() @ (-luar).cross(Vector((0, 0, 1))).normalized() * -0.2
+    kurir.kunci_tempat(arm, s7.frame_mulai, teras + kiri, arah)
+    kurir.kunci_tempat(arm, s7.frame_selesai, teras + kiri, arah)
 
     # Berdiri saja: tanpa angin dan teredam, tetapi tanpa tarikan ke bentuk lonceng awal
     p67 = kurir.ponco_shot(kol_kurir, arm, "Kurir_Ponco_S67", pra, s7.frame_selesai, tenang=True, goal=0.0)
     kurir.tampil_di(p67, s6.frame_mulai, s7.frame_selesai)
 
     tp = kurir.terapkan_pose
+    # Helm sudah dilepas sejak awal shot 6, tergantung di pergelangan kiri;
+    # paket di tangan kiri; tiga ketukan dengan tangan kanan.
     jadwal = [
-        (pra, "berdiri_paket"), (1153, "berdiri_paket"),
-        (1165, "pegang_helm"), (1176, "pegang_helm"), (1184, "angkat_helm"), (1198, "helm_di_tangan_paket"),
-        (1212, "ketuk_tarik"), (1218, "ketuk"), (1224, "ketuk_tarik"), (1230, "ketuk"), (1236, "ketuk_tarik"),
-        (1242, "ketuk"), (1252, "ketuk_tarik"), (1268, "helm_di_tangan_paket"),
-        (s7.frame_selesai, "helm_di_tangan_paket"),
+        (pra, "teras_paket"), (1153, "teras_paket"), (1190, "teras_paket"),
+        (1200, "ketuk_tarik"), (1206, "ketuk"), (1212, "ketuk_tarik"), (1218, "ketuk"), (1224, "ketuk_tarik"),
+        (1230, "ketuk"), (1240, "ketuk_tarik"), (1256, "teras_paket"),
+        (s7.frame_selesai, "teras_paket"),
     ]
     for f, nama in jadwal:
         tp(arm, nama, frame=f)
 
-    # Paket mengikuti tangan kiri kurir (koordinat motor), frame demi frame
+    # Paket: tangan kiri memegang helm dan tangan kanan mengetuk, jadi paket
+    # disembunyikan dari render selama shot 6-7 (belum ada tangan yang memegangnya).
     pk = bpy.data.objects["Paket"]
-    asal_lok, asal_rot = pk.location.copy(), pk.rotation_euler.copy()
-    pk.keyframe_insert("location", frame=s6.frame_mulai - 1)
-    pk.keyframe_insert("rotation_euler", frame=s6.frame_mulai - 1)
-    pb = arm.pose.bones["tangan.L"]
-    for f in range(s6.frame_mulai, s7.frame_selesai + 1):
-        scene.frame_set(f)
-        tangan = arm.matrix_world @ ((pb.head + pb.tail) / 2)
-        hadap = arm.matrix_world.to_3x3() @ Vector((1, 0, 0))  # ke arah tengah badan
-        pusat = tangan + hadap.normalized() * 0.12 - Vector((0, 0, 0.03))
-        pk.location = inv @ (pusat - Vector((0, 0, 0.08)))
-        pk.rotation_euler = (0, 0, arm.matrix_world.to_euler().z - m.matrix_world.to_euler().z)
-        pk.keyframe_insert("location", frame=f)
-        pk.keyframe_insert("rotation_euler", frame=f)
-    pk.location, pk.rotation_euler = asal_lok, asal_rot
-    pk.keyframe_insert("location", frame=s7.frame_selesai + 1)
-    pk.keyframe_insert("rotation_euler", frame=s7.frame_selesai + 1)
+    for o in [pk] + list(pk.children_recursive):
+        for f, sembunyi in ((s6.frame_mulai - 1, False), (s6.frame_mulai, True),
+                            (s7.frame_selesai, True), (s7.frame_selesai + 1, False)):
+            o.hide_render = sembunyi
+            o.keyframe_insert("hide_render", frame=f)
 
     # Pintu terbuka perlahan (3 detik) ke dalam rumah
     pintu = bpy.data.objects["Pintu_Tujuan"]
@@ -321,4 +339,5 @@ def shot67(m, arm, kol_kurir, kol_anak):
     arah_anak = math.degrees(math.atan2(-luar.x, luar.y))
     akar, api, lampu = anak.buat_anak(kol_anak, kota.TITIK["lantai_dalam"], arah_anak)
     anak.goyang_api(api, lampu, s6.frame_mulai, s7.frame_selesai)
+    _anak_siluet(kol_anak)
     scene.frame_set(1)

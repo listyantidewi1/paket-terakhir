@@ -11,8 +11,9 @@ Tulang:
 Kendali (tidak mengubah bentuk tubuh):
     ik_tangan.L/R, ik_kaki.L/R   sasaran IK (pergelangan tangan / kaki)
     siku.L/R, lutut.L/R          arah tekuk siku dan lutut
-    helm                         mengikuti soket_kepala atau soket_tangan.R
-                                 (properti "helm_di_tangan" 0..1, bisa diberi keyframe)
+    helm                         mengikuti soket_kepala atau soket_tangan.L (tergantung
+                                 dari tali di pergelangan kiri; properti "helm_di_tangan"
+                                 0..1, bisa diberi keyframe)
 
 Pose ditulis di POSE dalam koordinat armature (meter, derajat). Saat duduk,
 armature menjadi anak motor dengan titik pusat yang sama, sehingga koordinat
@@ -61,6 +62,8 @@ def _tulang():
         ]
     # Helm yang dipegang: tergantung di samping tangan kanan
     t.append(("soket_tangan.R", (0.27, 0.06, 0.66), (0.27, 0.06, 0.9), "tangan.R", False))
+    # Helm tergantung dari talinya di pergelangan kiri (tangan kiri tetap bisa memegang paket)
+    t.append(("soket_tangan.L", (-0.25, 0.06, 0.48), (-0.25, 0.06, 0.72), "tangan.L", False))
     return t
 
 
@@ -326,6 +329,9 @@ def _tubuh(kol, arm):
     m.lonjong((0, 0, 1.43), (0, 0.01, 1.57), 0.055, 0.055, "leher", "kurir_baju", lebih=0.02)
     m.lonjong((0, 0.012, 1.56), (0, 0.012, 1.79), 0.085, 0.1, "kepala", "kurir_kulit", lebih=0.0)
     m.lonjong((0, 0.0, 1.58), (0, 0.0, 1.8), 0.09, 0.105, "kepala", "kurir_rambut", lebih=0.005, potong=-0.15)
+    for x in (-1, 1):  # telinga (terlihat dari belakang saat helm dilepas)
+        m.lonjong((x * 0.086, -0.005, 1.65), (x * 0.092, -0.01, 1.7), 0.012, 0.022, "kepala", "kurir_kulit",
+                  lebih=0.004, n=10, m=6)
     for s, x in (("L", -1), ("R", 1)):
         m.lonjong((x * 0.04, 0, 1.42), (x * 0.18, 0, 1.42), 0.06, 0.06, f"bahu.{s}", "kurir_baju", lebih=0.04)
         m.lonjong((x * 0.18, 0, 1.42), (x * 0.2, 0, 1.13), 0.055, 0.055, f"lengan_atas.{s}", "kurir_baju")
@@ -423,6 +429,17 @@ def _ponco(kol, arm, nama="Kurir_Ponco"):
             s = 2 * math.pi * i / n  # s = 0 di depan (+Y)
             titik.append(Vector((rx * math.sin(s), ry * math.cos(s) + 0.01, z)))
             z_ujung.append(None)
+    # Bahu membulat: di baris bahu, sisi kiri-kanan menggembung mengikuti bahu
+    for j in range(2, len(atas)):
+        for i in range(n):
+            s = 2 * math.pi * i / n
+            p = titik[j * n + i]
+            p.x *= 1 + 0.07 * math.sin(s) ** 2
+            p.z += 0.012 * math.sin(s) ** 2 * (1 if j < 4 else 0)
+    # Lipatan kain yang jatuh ke bawah: tonjolan vertikal, makin dalam ke bawah
+    import random as _r
+    rl = _r.Random(5150)
+    fase = [rl.uniform(0, 6.28) for _ in range(3)]
     for j in range(1, baris + 1):
         t = j / baris
         for i in range(n):
@@ -430,10 +447,39 @@ def _ponco(kol, arm, nama="Kurir_Ponco"):
             ujung = 0.5 - 0.04 * math.cos(s)  # sampai lutut; depan sedikit lebih panjang
             z = 1.37 - (1.37 - ujung) * t
             rx, ry = 0.33 + 0.04 * t, 0.2 + 0.05 * t
-            titik.append(Vector((rx * math.sin(s), ry * math.cos(s) + 0.01 + 0.03 * t, z)))
+            lipat = (0.024 * t ** 0.8) * (0.55 * math.sin(9 * s + fase[0]) + 0.3 * math.sin(14 * s + fase[1])
+                                         + 0.15 * math.sin(5 * s + fase[2]))
+            arah = Vector((math.sin(s) / rx, math.cos(s) / ry, 0)).normalized()
+            titik.append(Vector((rx * math.sin(s), ry * math.cos(s) + 0.01 + 0.03 * t, z)) + arah * lipat)
             z_ujung.append(ujung)
     muka = [(j * n + i, j * n + (i + 1) % n, (j + 1) * n + (i + 1) % n, (j + 1) * n + i)
             for j in range(len(atas) + baris - 1) for i in range(n)]
+    # Tudung terlipat di punggung: kantong setengah kubah dengan bibir tergulung di atasnya
+    pusat_t, rxt, ryt, rzt = Vector((0, -0.19, 1.37)), 0.15, 0.065, 0.12
+    o = len(titik)
+    nu, nv = 14, 8
+    for jv in range(nv + 1):
+        el = -math.pi / 2 + math.pi * jv / nv
+        for iu in range(nu + 1):
+            az = math.pi * iu / nu  # setengah ke luar (ke belakang, -Y)
+            kerut = 1 + 0.06 * math.sin(5 * az + 0.7) * math.cos(el)  # sedikit berkerut
+            titik.append(pusat_t + Vector((-rxt * math.cos(el) * math.cos(az),
+                                           -ryt * kerut * math.cos(el) * math.sin(az), rzt * math.sin(el))))
+            z_ujung.append(None)
+    lebar_t = nu + 1
+    muka += [(o + jv * lebar_t + iu, o + jv * lebar_t + iu + 1, o + (jv + 1) * lebar_t + iu + 1,
+              o + (jv + 1) * lebar_t + iu) for jv in range(nv) for iu in range(nu)]
+    o = len(titik)  # bibir tudung yang tergulung: tabung kecil melengkung di tepi atas
+    lingkar, ruas = 8, 16
+    for k in range(ruas + 1):
+        a = math.pi * k / ruas
+        c = pusat_t + Vector((-rxt * 1.02 * math.cos(a), -0.012 - 0.02 * math.sin(a), rzt * 0.92 + 0.012 * math.sin(a)))
+        for q in range(lingkar):
+            b = 2 * math.pi * q / lingkar
+            titik.append(c + Vector((0, 0.014 * math.cos(b), 0.014 * math.sin(b))))
+            z_ujung.append(None)
+    muka += [(o + k * lingkar + q, o + k * lingkar + (q + 1) % lingkar, o + (k + 1) * lingkar + (q + 1) % lingkar,
+              o + (k + 1) * lingkar + q) for k in range(ruas) for q in range(lingkar)]
     mesh = bpy.data.meshes.new(nama)
     mesh.from_pydata([tuple(p) for p in titik], [], muka)
     mesh.materials.append(bpy.data.materials["ponco_kuning"])
@@ -539,7 +585,7 @@ def _armature(kol, nama):
     ke_kepala = pb["helm"].constraints.new("COPY_TRANSFORMS")
     ke_kepala.target, ke_kepala.subtarget = arm, "soket_kepala"
     ke_tangan = pb["helm"].constraints.new("COPY_TRANSFORMS")
-    ke_tangan.target, ke_tangan.subtarget = arm, "soket_tangan.R"
+    ke_tangan.target, ke_tangan.subtarget = arm, "soket_tangan.L"
     fc = ke_tangan.driver_add("influence")
     var = fc.driver.variables.new()
     var.name, var.type = "h", "SINGLE_PROP"
@@ -554,6 +600,7 @@ def buat_kurir(kol, nama="Kurir"):
     _bahan()
     arm = _armature(kol, nama)
     tubuh = _tubuh(kol, arm)
+    _rambut(kol, arm)
     _helm(kol, arm)
     _ponco(kol, arm)
     pasang_tumbukan(tubuh, 0.02, gesek=80.0)
@@ -693,8 +740,10 @@ def tampil_di(obj, frame_awal, frame_akhir):
 
 
 # Pose shot 6-7 di teras: paket di tangan kiri, helm dilepas dengan tangan kanan
-_PAKET_KIRI = {"ik_tangan.L": (-0.17, 0.22, 1.0)}
-_PAKET_KIRI_ROT = {"ik_tangan.L": (70, 0, -40)}
+# Tangan kiri memegang paket di depan-kiri, keluar dari sisi ponco; helm tergantung
+# dari pergelangan kiri. Tangan kanan bebas untuk mengetuk.
+_PAKET_KIRI = {"ik_tangan.L": (-0.3, 0.2, 0.98), "siku.L": (-0.7, -0.2, 1.1)}
+_PAKET_KIRI_ROT = {"ik_tangan.L": (60, 0, -50)}
 POSE["berdiri_paket"] = {
     "pinggul": (0, 0, 0.94),
     "ik": {**_PAKET_KIRI, "ik_tangan.R": (0.21, 0.04, 0.88),
@@ -716,3 +765,82 @@ POSE["ketuk"] = {**POSE["ketuk_pintu"], "helm": 1.0,
                  "ik": {**POSE["ketuk_pintu"]["ik"], **_PAKET_KIRI}, "ik_rot": {**POSE["ketuk_pintu"]["ik_rot"],
                                                                                **_PAKET_KIRI_ROT}}
 POSE["ketuk_tarik"] = {**POSE["ketuk"], "ik": {**POSE["ketuk"]["ik"], "ik_tangan.R": (0.14, 0.3, 1.4)}}
+
+# Tangan kiri sedikit menjauh dari badan: helm yang tergantung di pergelangan
+# kiri berada di luar sisi ponco dan terlihat dari belakang.
+_HELM_KIRI = {"ik_tangan.L": (-0.4, 0.04, 0.96), "siku.L": (-0.8, -0.3, 1.2)}
+POSE["teras_paket"] = {**POSE["berdiri_paket"], "helm": 1.0,
+                       "ik": {**POSE["berdiri_paket"]["ik"], **_HELM_KIRI}, "ik_rot": {}}
+for _n in ("ketuk", "ketuk_tarik"):
+    POSE[_n] = {**POSE[_n], "helm": 1.0, "ik": {**POSE[_n]["ik"], **_HELM_KIRI},
+                "ik_rot": {k: v for k, v in POSE[_n]["ik_rot"].items() if k != "ik_tangan.L"}}
+
+
+def _bahan_rambut():
+    if "kurir_rambut_helai" in bpy.data.materials:
+        return
+    b = bpy.data.materials.new("kurir_rambut_helai")
+    if b.node_tree is None:
+        b.use_nodes = True
+    nt = b.node_tree
+    nt.nodes.clear()
+    h = nt.nodes.new("ShaderNodeBsdfHairPrincipled")
+    h.parametrization = "MELANIN"
+    for soket, nilai in (("Melanin", 0.97), ("Melanin Redness", 0.15), ("Roughness", 0.16),
+                         ("Radial Roughness", 0.25), ("Coat", 0.35)):  # hitam, basah dan licin
+        if soket in h.inputs:
+            h.inputs[soket].default_value = nilai
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    nt.links.new(h.outputs[0], out.inputs["Surface"])
+
+
+def _rambut(kol, arm):
+    """Rambut hitam pendek yang basah: hair curves di kulit kepala, menggumpal, rebah.
+
+    Menempel kaku pada tulang kepala (bone parent). Garis rambut di dahi lebih
+    tinggi daripada di belakang dan samping.
+    """
+    import random as _r
+    _bahan_rambut()
+    rng = _r.Random(808)
+    pusat, ax, ay, az = Vector((0, 0.0, 1.69)), 0.093, 0.108, 0.113
+    posisi, jari = [], []
+    n_gumpal = 2600
+    for _ in range(n_gumpal):
+        while True:
+            u = Vector((rng.gauss(0, 1), rng.gauss(0, 1), rng.gauss(0, 1))).normalized()
+            p = pusat + Vector((u.x * ax, u.y * ay, u.z * az))
+            batas = 1.725 if u.y > 0.55 else 1.62 - 0.02 * max(0.0, -u.y)  # dahi lebih tinggi
+            if p.z > batas:
+                break
+        nrm = Vector((u.x / ax, u.y / ay, u.z / az)).normalized()
+        alir = Vector((0, -0.35, -1.0))
+        alir = (alir - nrm * alir.dot(nrm)).normalized()  # menyusur kulit kepala, ke belakang-bawah
+        pj = rng.uniform(0.022, 0.036)
+        ujung_g = p + (alir * 0.85 + nrm * 0.18) * pj
+        for _ in range(5):  # 5 helai per gumpalan basah
+            geser = Vector((rng.uniform(-1, 1), rng.uniform(-1, 1), rng.uniform(-1, 1))) * 0.003
+            dasar = p + geser - nrm * 0.002
+            ujung = (dasar + (alir * 0.85 + nrm * 0.22) * pj * rng.uniform(0.85, 1.1)).lerp(ujung_g, 0.7)
+            for k in range(4):
+                f = k / 3
+                posisi.append(dasar.lerp(ujung, f) + nrm * (pj * 0.12 * math.sin(f * math.pi)))
+                jari.append(0.0005 * (1 - 0.7 * f))
+    n_helai = len(posisi) // 4
+    tl = arm.data.bones["kepala"]
+    ke_tulang = (tl.matrix_local @ Matrix.Translation((0, tl.length, 0))).inverted()
+    cv = bpy.data.hair_curves.new("Kurir_Rambut")
+    cv.add_curves([4] * n_helai)
+    datar = []
+    for p in posisi:
+        q = ke_tulang @ p
+        datar += [q.x, q.y, q.z]
+    cv.position_data.foreach_set("vector", datar)
+    cv.attributes.new("radius", "FLOAT", "POINT").data.foreach_set("value", jari)
+    cv.materials.append(bpy.data.materials["kurir_rambut_helai"])
+    obj = bpy.data.objects.new("Kurir_Rambut", cv)
+    kol.objects.link(obj)
+    obj.parent = arm
+    obj.parent_type = "BONE"
+    obj.parent_bone = "kepala"
+    return obj
