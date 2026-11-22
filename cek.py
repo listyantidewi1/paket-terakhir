@@ -8,6 +8,7 @@ Jalankan (setelah bangun.py):
 
 --motor : motor dari depan-kanan ke cek/motor.png
 --kurir : kurir dari samping (kanan) ke cek/kurir.png
+--hp    : layar HP dari dekat ke cek/hp.png
 Simulasi kain (ponco) dihitung berurutan dari awal cache-nya sebelum render.
 
 Hasil: cek/frame_XXXX.png dan cek/lembar.png.
@@ -144,6 +145,8 @@ def susun_lembar(jalur_semua):
 DEKAT = {
     "motor": ("Motor", (2.3, 2.6, 1.3), (0.0, -0.15, 0.65), 35, "Motor dari dekat"),
     "kurir": ("Motor", (3.4, -0.1, 1.2), (0.0, -0.1, 1.0), 32, "Kurir dari samping"),
+    # Layar HP dari depan layar (koordinat HP_Layar: Z keluar layar)
+    "hp": ("HP_Layar", (0.0, -0.01, 0.48), (0.0, 0.0, 0.0), 50, "Layar HP"),
 }
 
 

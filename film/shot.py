@@ -18,13 +18,32 @@ T = kota.TITIK
 KAMERA = {
     # Wide rendah dekat genangan, menatap Jl. Kenanga ke arah motor pergi
     1: (T["motor_kenanga"] + Vector((0.6, -7.5, 0.35)), T["motor_kenanga"] + Vector((0.4, 40, 3.0)), 24),
-    # Dari belakang-atas bahu kurir: jalan kecil, simpang tiga, kali di kanan
-    2: (T["motor_kali"] + Vector((-0.2, -6.0, 1.9)), T["tepi_kali"] + Vector((1.2, 0.0, -0.9)), 24),
+    # Dari belakang-atas bahu kanan pengendara (posisi kepala saat duduk):
+    # layar GPS di latar depan bawah, jalan kecil, simpang tiga, kali di kanan
+    2: (T["motor_kali"] + Vector((0.22, -0.32, 1.62)), T["motor_kali"] + Vector((0.35, 5.0, 0.35)), 22),
     # Belakang-samping motor di lampu merah: lampu lalu lintas, warung, bangku
     3: (T["motor_lampu_merah"] + Vector((2.6, -5.5, 1.45)), T["bangku_warung"] + Vector((0.6, 3.0, 1.1)), 28),
     # Dari belakang motor di mulut Gang Melati, menyusuri gang
     4: (T["mulut_gang"] + Vector((0.0, -6.5, 1.65)), T["mulut_gang"] + Vector((0.0, 30.0, 1.8)), 24),
 }
+
+def _kamera_rumah():
+    """Kamera shot 6 dan 7 di rumah tujuan (titiknya baru ada setelah kota dibangun)."""
+    if "teras_tujuan" not in T:
+        return {}
+    P, luar, pintu = T["teras_tujuan"], T["pintu_keluar"], T["pintu_tujuan"]
+    kanan = (-luar).cross(Vector((0, 0, 1))).normalized()  # kanan kurir yang menghadap pintu
+    return {
+        # Statis dari belakang kurir, sedikit low angle; kamera tidak pernah ke depan kurir
+        # (di dalam halaman, di depan tiang gerbang dan tiang kanopi)
+        # Kamera agak ke kanan supaya pintu dan celah cahayanya terlihat di samping kurir
+        6: (P + luar * 1.6 + kanan * 0.65 + Vector((0, 0, 0.95)), pintu + Vector((0, 0, 1.25)), 26),
+        # Over-the-shoulder dari belakang bahu kanan kurir: bahu (dan kembang
+        # ponconya) hanya di sisi kiri frame, siluet anak dan kue di tengah
+        7: (P + luar * 1.2 + kanan * 1.15 + Vector((0, 0, 1.75)),
+            T["lantai_dalam"] + Vector((0, 0, 0.75)), 35),
+    }
+
 
 SET_SEMENTARA_Y = -2000.0  # jauh dari semua lokasi kota
 JARAK_SET = 40.0
@@ -110,12 +129,13 @@ def bangun_shot():
     induk = bpy.data.collections.new("Shot")
     scene.collection.children.link(induk)
 
+    kamera = {**KAMERA, **_kamera_rumah()}
     scene.timeline_markers.clear()
     for shot in SHOTS:
         kol = bpy.data.collections.new(shot.nama)
         induk.children.link(kol)
-        if shot.nomor in KAMERA:
-            lokasi, sasaran, lensa = KAMERA[shot.nomor]
+        if shot.nomor in kamera:
+            lokasi, sasaran, lensa = kamera[shot.nomor]
         else:
             lokasi, sasaran, lensa = _set_sementara(shot, kol)
         cam = _kamera(f"{shot.nama}_Kamera", kol, lokasi, sasaran, lensa)

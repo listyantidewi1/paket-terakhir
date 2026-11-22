@@ -14,7 +14,7 @@ import bpy
 from mathutils import Vector
 
 from . import dunia_kota as kota
-from . import kucing, kurir, waktu
+from . import anak, kucing, kurir, waktu
 
 # Jadwal shot 3 (frame film). JEDA: lampu hijau di HIJAU, lalu 24 frame
 # (1 detik pada 24 fps) tanpa gerakan apa pun dari kurir maupun kucing.
@@ -76,6 +76,32 @@ def _ke_dunia(m, p):
     return m.matrix_world @ Vector(p)
 
 
+def shot2(m, arm):
+    """Shot 2: motor di jalan kecil tepi kali (diam untuk sementara).
+
+    Motor ada di tepi kali sampai frame sebelum pra-gulir kain shot 3. Menurut
+    storyboard motor sudah keluar frame di akhir shot 2, jadi 3 detik terakhir
+    shot 2 bisa dipakai pra-gulir shot 3 di lampu merah.
+    Kurir disembunyikan dari render di shot 2: kamera ada di atas setang
+    menatap ke depan, dan ponconya belum disimulasikan untuk shot ini.
+    """
+    s1, s2, s3 = waktu.SHOTS[0], waktu.SHOTS[1], waktu.SHOTS[2]
+    scene = bpy.context.scene
+    scene.frame_set(s1.frame_selesai)
+    jarak1 = m["jarak_tempuh"]
+    pra3 = s3.frame_mulai - kurir.MULAI_KAIN
+    kali = kota.TITIK["motor_kali"]
+    _kunci_motor_diam(m, s2.frame_mulai, kali, jarak1)
+    _kunci_motor_diam(m, pra3 - 1, kali, jarak1)
+    for nama in ("Kurir_Tubuh", "Kurir_Helm"):
+        obj = bpy.data.objects[nama]
+        for f, sembunyi in ((s2.frame_mulai - 1, False), (s2.frame_mulai, True),
+                            (s2.frame_selesai, True), (s2.frame_selesai + 1, False)):
+            obj.hide_render = sembunyi
+            obj.keyframe_insert("hide_render", frame=f)
+    scene.frame_set(1)
+
+
 def shot3(m, arm, kc, kol_kurir):
     s3 = waktu.SHOTS[2]
     pra = s3.frame_mulai - kurir.MULAI_KAIN
@@ -87,14 +113,14 @@ def shot3(m, arm, kc, kol_kurir):
     s1 = waktu.SHOTS[0]
     scene.frame_set(s1.frame_selesai)
     akhir1, jarak1 = m.location.copy(), m["jarak_tempuh"]
-    _kunci_motor_diam(m, s1.frame_selesai + 1, akhir1, jarak1)
-    _kunci_motor_diam(m, pra - 1, akhir1, jarak1)
+    # (Frame shot 1 berikutnya sampai pra - 1 diatur oleh shot2(): motor di tepi kali.)
     _kunci_motor_diam(m, pra, M, jarak1)
     _kunci_motor_diam(m, s3.frame_selesai, M, jarak1)
 
     # --- Ponco: ponco shot 1 hanya tampil di shot 1; ponco shot 3 punya cache sendiri
     kurir.tampil_di(bpy.data.objects["Kurir_Ponco"], -10000, s1.frame_selesai)
-    p3 = kurir.ponco_shot(kol_kurir, arm, "Kurir_Ponco_S3", pra, s3.frame_selesai)
+    # Ponco ditenangkan: di shot ini kurir turun dan berjalan, kain tidak boleh terbang
+    p3 = kurir.ponco_shot(kol_kurir, arm, "Kurir_Ponco_S3", pra, s3.frame_selesai, tenang=True)
     kurir.tampil_di(p3, s3.frame_mulai, s3.frame_selesai)
 
     # --- Kurir duduk lagi (pra-gulir kain seperti shot 1), lalu adegan
@@ -138,6 +164,15 @@ def shot3(m, arm, kc, kol_kurir):
     kurir.kunci_tempat(arm, s3.frame_selesai, (-0.9, -0.9, 0), -409)
     for i, f in enumerate(range(756, s3.frame_selesai + 1, 11)):
         tp(arm, "jalan_kiri" if i % 2 == 0 else "jalan_kanan", frame=f)
+
+    # Saat kurir turun, ponco jangan tersangkut di jok atau boks (gesekannya
+    # tinggi agar ponco tidak merosot ketika duduk): tumbukan motor dimatikan.
+    for o in m.children_recursive:
+        if o.type == "MESH" and any(md.type == "COLLISION" for md in o.modifiers):
+            for f, aktif in ((GERAK_LAGI + 5, True), (GERAK_LAGI + 6, False), (s3.frame_selesai, False),
+                             (s3.frame_selesai + 1, True)):
+                o.collision.use = aktif
+                o.keyframe_insert("collision.use", frame=f)
 
     # --- Lampu lalu lintas
     _lampu_hijau(HIJAU)
@@ -216,3 +251,74 @@ def periksa_jeda(arm, kc, frame_awal=HIJAU, panjang=JEDA):
     scene.frame_set(frame_awal + panjang)
     sesudah = max((a - b).length for a, b in zip(awal, keadaan()))
     return terbesar, sesudah
+
+
+def shot67(m, arm, kol_kurir, kol_anak):
+    """Shot 6-7 di teras rumah tujuan.
+
+    Shot 6: kurir (dari belakang) berdiri di teras dengan paket di tangan kiri,
+    melepas helm dengan tangan kanan, lalu mengetuk pintu tiga kali.
+    Shot 7: pintu kayu terbuka perlahan; siluet anak membawa kue dengan tiga
+    lilin di ambang pintu; cahaya hangat dari dalam rumah.
+    """
+    s6, s7 = waktu.SHOTS[5], waktu.SHOTS[6]
+    scene = bpy.context.scene
+    pra = s6.frame_mulai - kurir.MULAI_KAIN
+    luar = kota.TITIK["pintu_keluar"]
+
+    # Kurir: koordinat motor (kurir anak dari motor; motor diam di lampu merah)
+    scene.frame_set(pra - 1)
+    lama_lok, lama_rot = arm.location.copy(), math.degrees(arm.rotation_euler.z)
+    inv = m.matrix_world.inverted()
+    teras = inv @ kota.TITIK["teras_tujuan"]
+    arah = math.degrees(math.atan2(luar.x, -luar.y))  # menghadap ke dalam rumah
+    kurir.kunci_tempat(arm, pra - 1, lama_lok, lama_rot)
+    kurir.kunci_tempat(arm, pra, teras, arah)
+    kurir.kunci_tempat(arm, s7.frame_selesai, teras, arah)
+
+    # Berdiri saja: tanpa angin dan teredam, tetapi tanpa tarikan ke bentuk lonceng awal
+    p67 = kurir.ponco_shot(kol_kurir, arm, "Kurir_Ponco_S67", pra, s7.frame_selesai, tenang=True, goal=0.0)
+    kurir.tampil_di(p67, s6.frame_mulai, s7.frame_selesai)
+
+    tp = kurir.terapkan_pose
+    jadwal = [
+        (pra, "berdiri_paket"), (1153, "berdiri_paket"),
+        (1165, "pegang_helm"), (1176, "pegang_helm"), (1184, "angkat_helm"), (1198, "helm_di_tangan_paket"),
+        (1212, "ketuk_tarik"), (1218, "ketuk"), (1224, "ketuk_tarik"), (1230, "ketuk"), (1236, "ketuk_tarik"),
+        (1242, "ketuk"), (1252, "ketuk_tarik"), (1268, "helm_di_tangan_paket"),
+        (s7.frame_selesai, "helm_di_tangan_paket"),
+    ]
+    for f, nama in jadwal:
+        tp(arm, nama, frame=f)
+
+    # Paket mengikuti tangan kiri kurir (koordinat motor), frame demi frame
+    pk = bpy.data.objects["Paket"]
+    asal_lok, asal_rot = pk.location.copy(), pk.rotation_euler.copy()
+    pk.keyframe_insert("location", frame=s6.frame_mulai - 1)
+    pk.keyframe_insert("rotation_euler", frame=s6.frame_mulai - 1)
+    pb = arm.pose.bones["tangan.L"]
+    for f in range(s6.frame_mulai, s7.frame_selesai + 1):
+        scene.frame_set(f)
+        tangan = arm.matrix_world @ ((pb.head + pb.tail) / 2)
+        hadap = arm.matrix_world.to_3x3() @ Vector((1, 0, 0))  # ke arah tengah badan
+        pusat = tangan + hadap.normalized() * 0.12 - Vector((0, 0, 0.03))
+        pk.location = inv @ (pusat - Vector((0, 0, 0.08)))
+        pk.rotation_euler = (0, 0, arm.matrix_world.to_euler().z - m.matrix_world.to_euler().z)
+        pk.keyframe_insert("location", frame=f)
+        pk.keyframe_insert("rotation_euler", frame=f)
+    pk.location, pk.rotation_euler = asal_lok, asal_rot
+    pk.keyframe_insert("location", frame=s7.frame_selesai + 1)
+    pk.keyframe_insert("rotation_euler", frame=s7.frame_selesai + 1)
+
+    # Pintu terbuka perlahan (3 detik) ke dalam rumah
+    pintu = bpy.data.objects["Pintu_Tujuan"]
+    buka = math.radians(pintu["buka_derajat"])
+    for f, sudut in ((s7.frame_mulai + 3, 0.0), (s7.frame_mulai + 73, buka), (s7.frame_selesai, buka)):
+        pintu.rotation_euler = (0, 0, sudut)
+        pintu.keyframe_insert("rotation_euler", index=2, frame=f)
+
+    # Anak di ambang pintu, menghadap teras, membawa kue; api lilin bergoyang
+    arah_anak = math.degrees(math.atan2(-luar.x, luar.y))
+    akar, api, lampu = anak.buat_anak(kol_anak, kota.TITIK["lantai_dalam"], arah_anak)
+    anak.goyang_api(api, lampu, s6.frame_mulai, s7.frame_selesai)
+    scene.frame_set(1)

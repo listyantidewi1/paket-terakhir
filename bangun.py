@@ -15,7 +15,7 @@ AKAR = os.path.dirname(os.path.abspath(__file__))
 if AKAR not in sys.path:
     sys.path.insert(0, AKAR)
 
-from film import adegan, cipratan, dunia_kota, kucing, kurir, motor, shot, waktu  # noqa: E402
+from film import adegan, cipratan, dunia_kota, hp, kucing, kurir, motor, shot, waktu  # noqa: E402
 
 SEED = 75
 BERKAS = os.path.join(AKAR, "film.blend")
@@ -97,7 +97,16 @@ def main():
     kol_kucing = bpy.data.collections.new("Kucing")
     bpy.context.scene.collection.children.link(kol_kucing)
     kc = kucing.buat_kucing(kol_kucing)
+    adegan.shot2(m, arm)
     adegan.shot3(m, arm, kc, kol_kurir)
+    # Shot 6-7: teras rumah tujuan, pintu terbuka, siluet anak dengan kue
+    kol_anak = bpy.data.collections.new("Anak")
+    bpy.context.scene.collection.children.link(kol_anak)
+    adegan.shot67(m, arm, kol_kurir, kol_anak)
+    # HP di setang: navigasi di shot 2, paket terakhir di shot 4-5
+    S = waktu.SHOTS
+    hp.buat_hp(kol_motor, m, [(S[1].frame_mulai, S[1].frame_selesai)],
+               [(S[3].frame_mulai, S[4].frame_selesai)])
     print(f"[bangun] kucing: {kc['jumlah_helai_bulu']} helai bulu")
     shot.bangun_shot()
     bpy.ops.wm.save_as_mainfile(filepath=BERKAS)

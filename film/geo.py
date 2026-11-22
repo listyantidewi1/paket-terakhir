@@ -15,7 +15,7 @@ from bpy_extras import anim_utils
 from mathutils import Vector
 
 Z = Vector((0, 0, 1))
-HALUS = {"daun"}  # bahan yang permukaannya dihaluskan (semak, sulur)
+HALUS = {"daun", "siluet"}  # bahan yang permukaannya dihaluskan (semak, sulur)
 
 
 def koleksi(nama, induk=None):

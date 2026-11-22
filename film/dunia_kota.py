@@ -13,7 +13,7 @@ import math
 import random
 
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 from . import bahan
 from .geo import Bingkai, Kanvas, animasi_linear, kabel, koleksi, teks
@@ -173,21 +173,49 @@ def _kabut(kol, nama, a, b, kerapatan):
     k.selesai()
 
 
-def _rumah(k, rng, f, a0, a1, mundur, dalam, kaca_nyala=0.5, lampu_teras=True, nama=""):
-    """Rumah satu atau dua lantai di kavling a0..a1, fasad di b = mundur."""
+RUMAH_TUJUAN = 7  # rumah penerima paket di Gang Melati
+PINTU_BUKA = 95  # derajat, pintu membuka ke dalam rumah
+TUJUAN = {}  # diisi saat membangun rumah tujuan: bingkai, posisi pintu, ukuran
+
+
+def _rumah(k, rng, f, a0, a1, mundur, dalam, kaca_nyala=0.5, lampu_teras=True, nama="", tujuan=False):
+    """Rumah satu atau dua lantai di kavling a0..a1, fasad di b = mundur.
+
+    tujuan=True: rumah berongga dengan lubang pintu (pintunya objek terpisah
+    yang bisa dibuka, lihat _isi_rumah_tujuan). Bilangan acak yang diambil
+    sama persis dengan rumah biasa, jadi rumah lain tidak berubah.
+    """
     w = a1 - a0
     ra0, ra1 = a0 + 0.3, a1 - 0.3
     dua_lantai = rng.random() < 0.2
     h = 6.2 if dua_lantai else rng.uniform(3.0, 3.6)
     dinding = f"plester_{rng.randrange(len(bahan.WARNA_DINDING))}"
-    f.kotak(k[dinding], ra0, ra1, mundur, mundur + dalam, 0, h)
-    f.kotak(k["beton"], ra0 - 0.02, ra1 + 0.02, mundur - 0.02, mundur + dalam, 0, 0.3)
-
-    # Pintu, kusen, lampu teras
     lebar_isi = ra1 - ra0
     pintu = ra0 + rng.uniform(0.25, 0.4) * lebar_isi
-    f.kotak(k["beton"], pintu - 0.55, pintu + 0.55, mundur - 0.06, mundur, 0.1, 2.35)
-    f.kotak(k["kayu_pintu"], pintu - 0.45, pintu + 0.45, mundur - 0.08, mundur - 0.02, 0.1, 2.2)
+    if tujuan:
+        t, p0, p1, atas = 0.15, pintu - 0.45, pintu + 0.45, 2.25
+        g = k[dinding]
+        f.kotak(g, ra0, p0, mundur, mundur + t, 0, h)  # dinding depan kiri pintu
+        f.kotak(g, p1, ra1, mundur, mundur + t, 0, h)  # kanan pintu
+        f.kotak(g, p0, p1, mundur, mundur + t, atas, h)  # di atas pintu
+        f.kotak(g, ra0, ra0 + t, mundur, mundur + dalam, 0, h)
+        f.kotak(g, ra1 - t, ra1, mundur, mundur + dalam, 0, h)
+        f.kotak(g, ra0, ra1, mundur + dalam - t, mundur + dalam, 0, h)
+        f.kotak(g, ra0, ra1, mundur, mundur + dalam, h - 0.1, h)  # plafon
+        f.kotak(k["beton"], ra0 - 0.02, ra1 + 0.02, mundur - 0.02, mundur + dalam, 0, 0.3)
+        for x0, x1, c0, c1 in ((p0 - 0.1, p0, 0.3, atas + 0.1), (p1, p1 + 0.1, 0.3, atas + 0.1),
+                               (p0 - 0.1, p1 + 0.1, atas, atas + 0.1)):
+            f.kotak(k["beton"], x0, x1, mundur - 0.06, mundur + t, c0, c1)  # kusen
+        TUJUAN.update(bingkai=f, pintu=pintu, mundur=mundur, dalam=dalam, h=h, ra0=ra0, ra1=ra1,
+                      atas=atas, nama=nama)
+    else:
+        f.kotak(k[dinding], ra0, ra1, mundur, mundur + dalam, 0, h)
+        f.kotak(k["beton"], ra0 - 0.02, ra1 + 0.02, mundur - 0.02, mundur + dalam, 0, 0.3)
+
+    # Pintu, kusen, lampu teras
+    if not tujuan:
+        f.kotak(k["beton"], pintu - 0.55, pintu + 0.55, mundur - 0.06, mundur, 0.1, 2.35)
+        f.kotak(k["kayu_pintu"], pintu - 0.45, pintu + 0.45, mundur - 0.08, mundur - 0.02, 0.1, 2.2)
     # Jendela
     jendela = [pintu + 1.6] if lebar_isi < 5.5 else [pintu + 1.5, pintu + 2.9]
     for i, j in enumerate(jendela):
@@ -707,7 +735,8 @@ def _gang_melati(rng, kota):
             lebar = rng.uniform(6.0, 7.5)
             nomor = nomor_awal + 2 * i
             _pagar_hijau(k, rng, f, a, a + lebar, nomor)
-            _rumah(k, rng, f, a, a + lebar, rng.uniform(2.2, 3.2), rng.uniform(7, 9), nama=f"No{nomor:02d}")
+            _rumah(k, rng, f, a, a + lebar, rng.uniform(2.2, 3.2), rng.uniform(7, 9), nama=f"No{nomor:02d}",
+                   tujuan=(nomor == RUMAH_TUJUAN))
             # Tembok batas antar kavling
             f.kotak(k["bata"], a, a + 0.12, 0.2, 12, 0, 1.8)
             a += lebar
@@ -732,6 +761,7 @@ def _gang_melati(rng, kota):
     kabel(k, "Kabel_Gang", pasangan, "kabel")
 
     k.selesai()
+    _isi_rumah_tujuan(kol)
     _hujan(kol, "Hujan_Gang", gx0 - 6, gx1 + 6, Y0 - 6, 36, 0.0, 12000, rng)
     _kabut(kol, "Kabut_Gang", (X - 50, Y0 - 30, -1), (X + 50, Y1 + 20, 25), 0.006)
 
@@ -791,3 +821,49 @@ def _pagar_hijau(k, rng, f, a0, a1, nomor):
             continue
         f.kotak(k["pot"], a - 0.12, a + 0.12, 0.02, 0.18, 1.45, 1.7)
         k["daun"].bola(f.titik(a, 0.1, 1.85), (0.25, 0.25, 0.22))
+
+
+def _isi_rumah_tujuan(kol):
+    """Pintu kayu berengsel, lampu hangat di dalam, dan titik penting rumah tujuan.
+
+    Pintu: objek "Pintu_Tujuan", titik putar di engsel; rotation_euler.z = 0
+    tertutup, PINTU_BUKA derajat terbuka ke dalam rumah.
+    """
+    t = TUJUAN
+    f, pintu, mundur = t["bingkai"], t["pintu"], t["mundur"]
+    k = Kanvas("Rumah_Tujuan", kol)
+    engsel = f.titik(pintu - 0.44, mundur + 0.04, 0.3)
+    g = k["kayu_pintu"]
+    f.kotak(g, pintu - 0.44, pintu + 0.44, mundur + 0.02, mundur + 0.06, 0.31, t["atas"] - 0.01)
+    for c0 in (0.6, 1.45):  # panel timbul
+        f.kotak(g, pintu - 0.34, pintu + 0.34, mundur + 0.01, mundur + 0.02, c0, c0 + 0.6)
+    f.kotak(k["logam_gelap"], pintu + 0.3, pintu + 0.38, mundur - 0.01, mundur + 0.02, 1.25, 1.29)  # gagang
+    # Lampu gantung di dalam (bohlam terlihat di ujung lorong)
+    bohlam = f.titik(pintu, mundur + t["dalam"] * 0.45, t["h"] - 0.45)
+    k["lampu_teras"].kotak(bohlam - Vector((0.04, 0.04, 0.04)), bohlam + Vector((0.04, 0.04, 0.04)))
+    k.selesai()
+    pintu_obj = bpy.data.objects["Rumah_Tujuan_kayu_pintu"]
+    pintu_obj.name = "Pintu_Tujuan"
+    # titik asal objek dipindah ke engsel tanpa menggeser mesh
+    pintu_obj.data.transform(Matrix.Translation(-engsel))
+    pintu_obj.location = engsel
+    pintu_obj["buka_derajat"] = PINTU_BUKA * (1 if f.u.cross(f.n).z > 0 else -1)
+
+    lampu = _lampu(k, "Rumah_Tujuan_Lampu", bohlam - Vector((0, 0, 0.08)), (1.0, 0.62, 0.3), 120,
+                   jenis="POINT", lunak=0.1)
+    # Cahaya hangat dari belakang tempat anak berdiri, mengarah ke pintu:
+    # anak di ambang pintu menjadi siluet gelap.
+    data = bpy.data.lights.new("Rumah_Tujuan_Belakang", type="AREA")
+    data.energy = 90
+    data.size = 1.4
+    data.color = (1.0, 0.6, 0.28)
+    belakang = k.objek("Rumah_Tujuan_Belakang", data)
+    belakang.location = f.titik(pintu, mundur + 2.6, 1.3)
+    belakang.rotation_euler = (f.muka).to_track_quat("-Z", "Y").to_euler()
+
+    luar = f.muka.normalized()
+    TITIK["pintu_tujuan"] = f.titik(pintu, mundur, 0.0)  # tengah ambang pintu, di lantai teras luar
+    TITIK["pintu_keluar"] = luar  # arah dari dalam rumah ke teras
+    TITIK["pintu_sepanjang"] = f.u.normalized()
+    TITIK["lantai_dalam"] = f.titik(pintu, mundur + 0.45, 0.3)  # tempat anak berdiri
+    TITIK["teras_tujuan"] = f.titik(pintu, mundur - 0.42, 0.08)  # tempat kurir berdiri (ketukan sampai ke pintu)

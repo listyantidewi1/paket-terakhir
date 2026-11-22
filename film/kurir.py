@@ -343,64 +343,97 @@ def _tubuh(kol, arm):
 
 
 def _helm(kol, arm):
-    """Helm full face: cangkang putih, kaca gelap lebar di depan, lis karet."""
-    m = _Mesh(["helm_putih", "helm_kaca", "helm_karet"])
+    """Helm full face yang terbaca sebagai helm dari segala arah.
+
+    Cangkang putih; kaca gelap menonjol yang melingkar sampai ke samping
+    (dengan bingkai hitam); pelindung dagu yang menonjol; engsel kaca di kedua
+    sisi; spoiler, ventilasi, dan strip pemantul di belakang; lis karet di bibir
+    bawah. Semua lembaran diberi ketebalan dengan Solidify.
+    """
+    m = _Mesh(["helm_putih", "helm_kaca", "helm_karet", "strip_pemantul"])
     pusat = Vector((0, 0.025, 1.69))
     rx, ry, rz = 0.145, 0.165, 0.155
-    n, cincin = 32, 18
-    o = len(m.v)
-    for j in range(cincin + 1):
-        el = math.radians(-70 + 160 * j / cincin)  # dari dagu ke puncak
-        for i in range(n):
-            az = 2 * math.pi * i / n
-            m.v.append(pusat + Vector((rx * math.cos(el) * math.sin(az), ry * math.cos(el) * math.cos(az),
-                                       rz * math.sin(el))))
-            m.grup.append("helm")
-    for j in range(cincin):
-        for i in range(n):
-            p, q = o + j * n, o + (j + 1) * n
-            m.f.append((p + i, p + (i + 1) % n, q + (i + 1) % n, q + i))
-            el = -70 + 160 * (j + 0.5) / cincin
-            az = math.degrees(2 * math.pi * (i + 0.5) / n)
-            depan = min(az, 360 - az) < 62
-            # kaca gelap lebar di depan; lis karet di bibir bawah
-            m.mat.append(1 if depan and -14 < el < 26 else 2 if el < -58 else 0)
+
+    def titik(el, az, skala):
+        el, az = math.radians(el), math.radians(az)
+        return pusat + Vector((rx * skala * math.cos(el) * math.sin(az), ry * skala * math.cos(el) * math.cos(az),
+                               rz * skala * math.sin(el)))
+
+    def lembar(el0, el1, az0, az1, skala, bahan_i, nel=6, naz=24, tutup=False):
+        """Lembaran pada permukaan elipsoid (el = elevasi, az = azimut dari depan)."""
+        o = len(m.v)
+        for j in range(nel + 1):
+            for i in range(naz + (0 if tutup else 1)):
+                az = az0 + (az1 - az0) * i / naz
+                m.v.append(titik(el0 + (el1 - el0) * j / nel, az, skala))
+                m.grup.append("helm")
+        lebar = naz if tutup else naz + 1
+        for j in range(nel):
+            for i in range(naz):
+                a, b = o + j * lebar + i, o + j * lebar + (i + 1) % lebar
+                m.f.append((a, b, b + lebar, a + lebar))
+                m.mat.append(bahan_i)
+
+    lembar(-70, 90, 0, 360, 1.0, 0, nel=18, naz=32, tutup=True)  # cangkang
+    lembar(-70, -60, 0, 360, 1.012, 2, nel=1, naz=32, tutup=True)  # lis karet bibir bawah
+    lembar(-17, 27, -82, 82, 1.035, 1, nel=6, naz=26)  # kaca gelap melingkar
+    for e0, e1 in ((27, 30.5), (-20.5, -17)):  # bingkai kaca atas dan bawah
+        lembar(e0, e1, -84, 84, 1.04, 2, nel=1, naz=26)
+    lembar(-58, -20, -52, 52, 1.045, 0, nel=5, naz=16)  # pelindung dagu menonjol
+    lembar(-52, -40, -18, 18, 1.06, 2, nel=1, naz=6)  # ventilasi dagu
+    lembar(12, 34, 150, 210, 1.07, 0, nel=3, naz=10)  # spoiler belakang
+    lembar(36, 48, 160, 200, 1.025, 2, nel=1, naz=6)  # ventilasi atas belakang
+    lembar(-12, -4, 140, 220, 1.012, 3, nel=1, naz=12)  # strip pemantul belakang
+    for s in (-1, 1):  # engsel kaca di kedua sisi
+        m.lonjong(titik(5, s * 84, 1.0), titik(5, s * 84, 1.08), 0.022, 0.022, "helm", "helm_karet",
+                  lebih=0.0, n=12, m=5)
     helm = m.objek("Kurir_Helm", kol, arm)
     sub = helm.modifiers.new("Halus", "SUBSURF")
     sub.levels = sub.render_levels = 1
     sol = helm.modifiers.new("Tebal", "SOLIDIFY")
-    sol.thickness = 0.012
+    sol.thickness = 0.008
     return helm
 
 
+TEPI_BEBAS = 0.15  # hanya 15 cm terbawah ponco yang disimulasikan sebagai kain
+
+
 def _ponco(kol, arm, nama="Kurir_Ponco"):
-    """Ponco berbentuk lonceng dari kerah ke lutut, dibobot ke tulang terdekat."""
-    # Kerah kecil hanya di leher; di ketinggian bahu (puncak bahu z 1,48, x sampai
-    # 0,22) ponco sudah lebar supaya bahu dan lengan selalu di dalam
-    # Di bawah bahu ponco melebar cepat seperti ponco motor sungguhan: panel
-    # depan cukup panjang untuk menumpang di atas lengan sampai ke setang
-    #
-    # Asimetris: panel depan panjang sampai lutut, panel belakang pendek dan
-    # berakhir di jok. Panel belakang yang panjang menjuntai di belakang jok dan
-    # menarik seluruh ponco ke belakang lewat bahu, lepas dari lengan dan paha.
-    profil = [(1.56, 0.07, 0.065), (1.53, 0.1, 0.09), (1.5, 0.2, 0.13), (1.47, 0.28, 0.17),
-              (1.43, 0.33, 0.21), (1.37, 0.38, 0.27)]
-    for i in range(1, 18):
-        t = i / 17
-        lebar = 1 - (1 - t) ** 2
-        profil.append((t, 0.38 + 0.32 * lebar, 0.27 + 0.36 * lebar))  # z dihitung per sudut
+    """Ponco sebagai mesh yang mengikuti tulang; hanya tepi bawahnya kain.
+
+    Bentuk: jubah dari kerah sampai lutut, menutupi bahu dan lengan atas
+    (lengan tetap di dalam), sedikit lebih panjang di depan. Bobot halus
+    (invers jarak ke 4 tulang terdekat), dengan "tudung bahu" yang dibobot ke
+    lengan atas; dual quaternion mencegah bahu kolaps saat lengan terangkat.
+
+    Pin (vertex group "pin"): bernilai 1 (terkunci penuh ke badan) di semua
+    bagian kecuali TEPI_BEBAS terbawah, yang turun halus dari 1 ke 0. Jadi
+    hanya ujung ponco yang bergoyang (angin laju, langkah); sisanya tidak
+    bisa menggembung atau lepas dari badan.
+    """
+    # (z, setengah lebar X, setengah tebal Y). Bahu: puncak bahu z 1,48, lengan
+    # menggantung di x 0,18-0,26, jadi ponco di x 0,31-0,34 menutupi lengan atas.
+    atas = [(1.56, 0.07, 0.065), (1.53, 0.1, 0.09), (1.5, 0.2, 0.13), (1.47, 0.27, 0.17),
+            (1.43, 0.31, 0.19), (1.37, 0.33, 0.2)]
     n = 56
-    titik = []
-    for z, rx, ry in profil:
+    baris = 24
+    titik, z_ujung = [], []
+    for j, (z, rx, ry) in enumerate(atas):
         for i in range(n):
             s = 2 * math.pi * i / n  # s = 0 di depan (+Y)
-            maju = 0.0
-            if z <= 1.0:  # baris bawah: z = t; panjang turun 0,92 m di depan, 0,55 m di belakang
-                maju = 0.16 * (1 - (1 - z) ** 2)  # baris bawah bergeser ke depan (menutupi pangkuan)
-                z = 1.37 - (0.735 + 0.185 * math.cos(s)) * z
-            titik.append(Vector((rx * math.sin(s), ry * math.cos(s) + 0.01 + maju, z)))
+            titik.append(Vector((rx * math.sin(s), ry * math.cos(s) + 0.01, z)))
+            z_ujung.append(None)
+    for j in range(1, baris + 1):
+        t = j / baris
+        for i in range(n):
+            s = 2 * math.pi * i / n
+            ujung = 0.5 - 0.04 * math.cos(s)  # sampai lutut; depan sedikit lebih panjang
+            z = 1.37 - (1.37 - ujung) * t
+            rx, ry = 0.33 + 0.04 * t, 0.2 + 0.05 * t
+            titik.append(Vector((rx * math.sin(s), ry * math.cos(s) + 0.01 + 0.03 * t, z)))
+            z_ujung.append(ujung)
     muka = [(j * n + i, j * n + (i + 1) % n, (j + 1) * n + (i + 1) % n, (j + 1) * n + i)
-            for j in range(len(profil) - 1) for i in range(n)]
+            for j in range(len(atas) + baris - 1) for i in range(n)]
     mesh = bpy.data.meshes.new(nama)
     mesh.from_pydata([tuple(p) for p in titik], [], muka)
     mesh.materials.append(bpy.data.materials["ponco_kuning"])
@@ -408,38 +441,30 @@ def _ponco(kol, arm, nama="Kurir_Ponco"):
     obj = bpy.data.objects.new(nama, mesh)
     kol.objects.link(obj)
 
-    # Bobot: invers jarak ke ruas tulang badan dan kaki terdekat (maks. 3 tulang).
-    # Bagian "tudung bahu" (di atas bahu dan lengan atas) dibobot ke lengan_atas
-    # dan dipin lunak, supaya kain menumpang di atas lengan atas saat lengan maju
-    # ke setang. Tanpa ini kain tertarik kencang di bahu, tertembus, lalu
-    # merosot ke bawah lengan. Armature memakai dual quaternion (lihat bawah)
-    # supaya bobot campuran dada-lengan tidak kolaps masuk ke bahu.
     calon = ["leher", "dada", "punggung", "pinggul", "paha.L", "paha.R", "betis.L", "betis.R"]
     ruas = {b.name: (b.head_local, b.tail_local) for b in arm.data.bones if b.name in calon}
     grup = {nama: obj.vertex_groups.new(name=nama) for nama in calon + ["lengan_atas.L", "lengan_atas.R"]}
     pin = obj.vertex_groups.new(name="pin")
     for idx, p in enumerate(titik):
         jarak = []
-        for nama, (a, b) in ruas.items():
+        for nama_t, (a, b) in ruas.items():
             ab = b - a
             t = max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared))
-            jarak.append(((p - (a + ab * t)).length, nama))
+            jarak.append(((p - (a + ab * t)).length, nama_t))
         jarak.sort()
-        bobot = [(1 / max(d, 0.02) ** 4, nama) for d, nama in jarak[:3]]
+        bobot = [(1 / max(d, 0.03) ** 2, nama_t) for d, nama_t in jarak[:4]]  # halus: kuadrat, 4 tulang
         total = sum(w for w, _ in bobot)
-        bahu = (min(1.0, max(0.0, (abs(p.x) - 0.14) / 0.12)) * min(1.0, max(0.0, (p.z - 1.18) / 0.12)))
-        for w, nama in bobot:
-            grup[nama].add([idx], (1 - bahu) * w / total, "REPLACE")
+        bahu = (min(1.0, max(0.0, (abs(p.x) - 0.14) / 0.14)) * min(1.0, max(0.0, (p.z - 1.12) / 0.18)))
+        bahu = bahu * bahu * (3 - 2 * bahu)
+        for w, nama_t in bobot:
+            grup[nama_t].add([idx], (1 - bahu) * w / total, "REPLACE")
         if bahu > 0:
             grup["lengan_atas.L" if p.x < 0 else "lengan_atas.R"].add([idx], bahu, "REPLACE")
-        # Pin: kerah menempel ke leher dan dada; tudung bahu ke lengan atas.
-        # (Tidak ada pin ke paha: jarak panel depan dari paha saat berdiri
-        # ikut berputar ke atas ketika duduk, sehingga titik tujuannya melayang.)
-        cincin = idx // n
-        w_pin = 1.0 if cincin <= 1 else 0.5 if cincin == 2 else 0.0
-        w_pin = max(w_pin, 0.7 * bahu)
-        if w_pin > 0:
-            pin.add([idx], w_pin, "REPLACE")
+        w_pin = 1.0
+        if z_ujung[idx] is not None:
+            u = min(1.0, max(0.0, (p.z - z_ujung[idx]) / TEPI_BEBAS))
+            w_pin = u * u * (3 - 2 * u)
+        pin.add([idx], w_pin, "REPLACE")
     _ke_armature(obj, arm)
     obj.modifiers["Armature"].use_deform_preserve_volume = True
 
@@ -450,10 +475,10 @@ def _ponco(kol, arm, nama="Kurir_Ponco"):
     st.tension_stiffness = 15
     st.compression_stiffness = 15
     st.shear_stiffness = 5
-    st.bending_stiffness = 8.0  # PVC kaku: panel depan menumpang di atas lengan, tidak melorot
-    st.air_damping = 1.5
+    st.bending_stiffness = 2.0
+    st.air_damping = 1.0
     st.vertex_group_mass = "pin"
-    st.pin_stiffness = 2.0
+    st.pin_stiffness = 8.0  # bagian berpin < 1 di pita tepi tetap cepat kembali ke bentuknya
     cs = kain.collision_settings
     cs.use_collision = True
     cs.distance_min = 0.015
@@ -625,7 +650,7 @@ def kunci_tempat(arm, frame, lokasi, arah_derajat):
     arm.keyframe_insert("rotation_euler", index=2, frame=frame)
 
 
-def ponco_shot(kol, arm, nama, mulai, selesai):
+def ponco_shot(kol, arm, nama, mulai, selesai, tenang=False, goal=0.2):
     """Ponco tambahan dengan cache simulasinya sendiri untuk satu shot.
 
     Cache simulasi kain hanya satu rentang frame, dan di batas shot kurir
@@ -634,7 +659,26 @@ def ponco_shot(kol, arm, nama, mulai, selesai):
     """
     obj = _ponco(kol, arm, nama)
     atur_kain(mulai, selesai, nama)
+    if tenang:
+        _tenangkan(obj.modifiers["Kain"].settings, goal)
     return obj
+
+
+def _tenangkan(st, goal=0.2):
+    """Ponco untuk adegan turun dan berjalan: tetap menggantung di badan.
+
+    Setiap titik kain ditarik lembut (goal minimum 0,2) ke bentuk ponco yang
+    mengikuti badan, goyangannya diredam, dan angin tidak berpengaruh. Kain
+    masih bergoyang sedikit dan masih bertumbukan dengan badan dan kucing.
+    """
+    st.goal_min = goal  # 0 untuk adegan berdiri: kain menjuntai bebas, tidak ditarik ke bentuk lonceng
+    st.goal_friction = 3.0
+    st.pin_stiffness = 3.0
+    st.air_damping = 1.0
+    st.tension_damping = 15.0
+    st.compression_damping = 15.0
+    st.bending_damping = 2.0
+    st.effector_weights.wind = 0.0
 
 
 def tampil_di(obj, frame_awal, frame_akhir):
@@ -646,3 +690,29 @@ def tampil_di(obj, frame_awal, frame_akhir):
     for f, sembunyi in ((frame_awal - 1, True), (frame_awal, False), (frame_akhir, False), (frame_akhir + 1, True)):
         obj.hide_render = sembunyi
         obj.keyframe_insert("hide_render", frame=f)
+
+
+# Pose shot 6-7 di teras: paket di tangan kiri, helm dilepas dengan tangan kanan
+_PAKET_KIRI = {"ik_tangan.L": (-0.17, 0.22, 1.0)}
+_PAKET_KIRI_ROT = {"ik_tangan.L": (70, 0, -40)}
+POSE["berdiri_paket"] = {
+    "pinggul": (0, 0, 0.94),
+    "ik": {**_PAKET_KIRI, "ik_tangan.R": (0.21, 0.04, 0.88),
+           "ik_kaki.L": (-0.1, 0, 0.1), "ik_kaki.R": (0.1, 0, 0.1)},
+    "ik_rot": dict(_PAKET_KIRI_ROT),
+}
+POSE["pegang_helm"] = {  # tangan kanan memegang sisi helm
+    **POSE["berdiri_paket"],
+    "ik": {**POSE["berdiri_paket"]["ik"], "ik_tangan.R": (0.15, 0.04, 1.66), "siku.R": (0.7, 0.1, 1.4)},
+    "ik_rot": {**_PAKET_KIRI_ROT, "ik_tangan.R": (180, 0, 0)},
+}
+POSE["angkat_helm"] = {  # helm terangkat lepas dari kepala, sudah di tangan
+    **POSE["pegang_helm"], "helm": 1.0,
+    "ik": {**POSE["pegang_helm"]["ik"], "ik_tangan.R": (0.2, 0.06, 1.62)},
+}
+POSE["helm_di_tangan_paket"] = {**POSE["berdiri_paket"], "helm": 1.0,
+                                "ik": {**POSE["berdiri_paket"]["ik"], "ik_tangan.R": (0.2, 0.1, 0.92)}}
+POSE["ketuk"] = {**POSE["ketuk_pintu"], "helm": 1.0,
+                 "ik": {**POSE["ketuk_pintu"]["ik"], **_PAKET_KIRI}, "ik_rot": {**POSE["ketuk_pintu"]["ik_rot"],
+                                                                               **_PAKET_KIRI_ROT}}
+POSE["ketuk_tarik"] = {**POSE["ketuk"], "ik": {**POSE["ketuk"]["ik"], "ik_tangan.R": (0.14, 0.3, 1.4)}}
