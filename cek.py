@@ -3,6 +3,7 @@
 Jalankan (setelah bangun.py):
     blender --background --python cek.py                    # frame tengah tiap shot
     blender --background --python cek.py -- 1 200 700       # frame pilihan
+    blender --background --python cek.py -- --shot 1 2 3 4  # frame tengah shot pilihan
 
 Hasil: cek/frame_XXXX.png dan cek/lembar.png.
 Setiap gambar diberi cap nomor shot dan frame (fitur stamp Blender),
@@ -47,7 +48,9 @@ def atur_render_kecil(scene):
     r.resolution_y = round(r.resolution_y * skala / 2) * 2
     r.resolution_percentage = 100
     scene.cycles.samples = SAMPEL
-    scene.cycles.use_denoising = False
+    # Denoiser OIDN di CPU: dengan 8 sampel gambar malam terlalu berbintik untuk dinilai.
+    scene.cycles.use_denoising = True
+    scene.cycles.denoiser = "OPENIMAGEDENOISE"
     scene.cycles.device = "CPU"
     r.image_settings.file_format = "PNG"
     r.image_settings.color_mode = "RGBA"
@@ -84,7 +87,7 @@ def baca_piksel(jalur):
 def susun_lembar(jalur_semua):
     gambar = [baca_piksel(j) for j in jalur_semua]
     h, w = gambar[0].shape[:2]
-    kolom = min(KOLOM, len(gambar))
+    kolom = min(KOLOM if len(gambar) > 4 else 2, len(gambar))
     baris = (len(gambar) + kolom - 1) // kolom
     W = kolom * w + (kolom + 1) * CELAH
     H = baris * h + (baris + 1) * CELAH
@@ -111,7 +114,12 @@ def main():
     bpy.ops.wm.open_mainfile(filepath=BERKAS)
     os.makedirs(FOLDER, exist_ok=True)
 
-    frames = [int(a) for a in argumen()] or [s.frame_tengah for s in waktu.SHOTS]
+    arg = argumen()
+    if "--shot" in arg:
+        pilih = {int(a) for a in arg[arg.index("--shot") + 1:]}
+        frames = [s.frame_tengah for s in waktu.SHOTS if s.nomor in pilih]
+    else:
+        frames = [int(a) for a in arg] or [s.frame_tengah for s in waktu.SHOTS]
     scene = bpy.context.scene
     atur_render_kecil(scene)
     susun_lembar([render_frame(scene, f) for f in frames])

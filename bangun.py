@@ -15,7 +15,7 @@ AKAR = os.path.dirname(os.path.abspath(__file__))
 if AKAR not in sys.path:
     sys.path.insert(0, AKAR)
 
-from film import shot, waktu  # noqa: E402
+from film import dunia_kota, shot, waktu  # noqa: E402
 
 SEED = 75
 BERKAS = os.path.join(AKAR, "film.blend")
@@ -45,21 +45,11 @@ def atur_scene(vertikal):
     scene.render.engine = "CYCLES"
     scene.cycles.samples = 128
     scene.cycles.use_denoising = True
+    scene.cycles.use_light_tree = True
     scene.render.image_settings.file_format = "PNG"
-
-    dunia = bpy.data.worlds.new("Malam")
-    latar = dunia.node_tree.nodes["Background"]
-    latar.inputs["Color"].default_value = (0.02, 0.03, 0.06, 1.0)
-    latar.inputs["Strength"].default_value = 1.0
-    scene.world = dunia
-
-
-def lampu_sementara():
-    data = bpy.data.lights.new("Sementara_Matahari", type="SUN")
-    data.energy = 3.0
-    obj = bpy.data.objects.new("Sementara_Matahari", data)
-    obj.rotation_euler = (0.8, 0.2, 0.6)
-    bpy.context.scene.collection.objects.link(obj)
+    scene.view_settings.view_transform = "AgX"
+    scene.view_settings.look = "AgX - Medium High Contrast"
+    scene.view_settings.exposure = 0.4
 
 
 def main():
@@ -67,7 +57,7 @@ def main():
     random.seed(SEED)
     kosongkan()
     atur_scene(vertikal)
-    lampu_sementara()
+    dunia_kota.bangun()
     shot.bangun_shot()
     bpy.ops.wm.save_as_mainfile(filepath=BERKAS)
     print(f"[bangun] {BERKAS} tersimpan, {len(waktu.SHOTS)} shot, "

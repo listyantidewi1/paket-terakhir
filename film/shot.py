@@ -1,31 +1,43 @@
-"""Satu set sementara dan satu kamera per shot.
+"""Satu kamera per shot, berganti otomatis lewat marker di timeline.
 
-Setiap shot punya koleksi sendiri ("S01", "S02", ...) yang diletakkan
-berjajar di sumbu X supaya tidak saling terlihat. Kamera berganti otomatis
-lewat marker timeline yang diikat ke kamera shot itu.
+Shot yang sudah punya lokasi di kota memakai kamera dari tabel KAMERA.
+Shot lain masih memakai set sementara (lantai, kubus, nomor shot) yang
+diletakkan jauh dari kota supaya tidak terlihat.
 """
 
 import bpy
 from mathutils import Vector
 
+from . import dunia_kota as kota
 from .waktu import SHOTS
 
-JARAK_SET = 40.0  # meter antar set shot di sumbu X
+T = kota.TITIK
+
+# nomor shot: (lokasi kamera, titik sasaran, lensa mm). Kamera statis dulu;
+# gerakan kamera dari storyboard dibuat nanti bersama isi adegan.
+KAMERA = {
+    # Wide rendah dekat genangan, menatap Jl. Kenanga ke arah motor pergi
+    1: (T["motor_kenanga"] + Vector((0.6, -7.5, 0.35)), T["motor_kenanga"] + Vector((0.4, 40, 3.0)), 24),
+    # Dari belakang-atas bahu kurir: jalan kecil, simpang tiga, kali di kanan
+    2: (T["motor_kali"] + Vector((-0.2, -6.0, 1.9)), T["tepi_kali"] + Vector((1.2, 0.0, -0.9)), 24),
+    # Belakang-samping motor di lampu merah: lampu lalu lintas, warung, bangku
+    3: (T["motor_lampu_merah"] + Vector((2.6, -5.5, 1.45)), T["bangku_warung"] + Vector((0.6, 3.0, 1.1)), 28),
+    # Dari belakang motor di mulut Gang Melati, menyusuri gang
+    4: (T["mulut_gang"] + Vector((0.0, -6.5, 1.65)), T["mulut_gang"] + Vector((0.0, 30.0, 1.8)), 24),
+}
+
+SET_SEMENTARA_Y = -2000.0  # jauh dari semua lokasi kota
+JARAK_SET = 40.0
 
 
 def _bahan(nama, warna):
     bahan = bpy.data.materials.get(nama) or bpy.data.materials.new(nama)
-    bahan.use_nodes = True
+    if bahan.node_tree is None:
+        bahan.use_nodes = True
     bsdf = bahan.node_tree.nodes.get("Principled BSDF")
     bsdf.inputs["Base Color"].default_value = (*warna, 1.0)
     bsdf.inputs["Roughness"].default_value = 0.5
     return bahan
-
-
-def _koleksi(nama):
-    kol = bpy.data.collections.new(nama)
-    bpy.context.scene.collection.children.link(kol)
-    return kol
 
 
 def _objek(nama, data, kol, lokasi):
@@ -65,32 +77,48 @@ def _tulisan(nama, teks, kol, lokasi, bahan):
     return obj
 
 
-def _kamera(nama, kol, lokasi, sasaran):
+def _kamera(nama, kol, lokasi, sasaran, lensa=35):
     data = bpy.data.cameras.new(nama)
-    data.lens = 35
+    data.lens = lensa
     data.sensor_fit = "AUTO"  # bekerja untuk 16:9 maupun 9:16
+    data.clip_start = 0.05
+    data.clip_end = 500
     cam = _objek(nama, data, kol, lokasi)
     arah = Vector(sasaran) - Vector(lokasi)
     cam.rotation_euler = arah.to_track_quat("-Z", "Y").to_euler()
     return cam
 
 
-def bangun_shot():
-    """Buat set sementara, kamera, dan marker untuk semua shot."""
-    scene = bpy.context.scene
+def _set_sementara(shot, kol):
     lantai = _bahan("Sementara_Lantai", (0.15, 0.15, 0.17))
     kubus = _bahan("Sementara_Kubus", (0.9, 0.45, 0.05))  # oranye boks paket
     huruf = _bahan("Sementara_Tulisan", (0.95, 0.95, 0.95))
+    x = (shot.nomor - 1) * JARAK_SET
+    y = SET_SEMENTARA_Y
+    _lantai(f"{shot.nama}_Lantai", kol, (x, y, 0), lantai)
+    _kubus(f"{shot.nama}_Kubus", kol, (x - 1.5, y, 0), kubus)
+    _tulisan(f"{shot.nama}_Nomor", f"SHOT {shot.nomor}", kol, (x + 1.2, y, 0.6), huruf)
+    data = bpy.data.lights.new(f"{shot.nama}_Lampu", type="POINT")  # bukan SUN: matahari menerangi kota
+    data.energy = 4000.0
+    _objek(f"{shot.nama}_Lampu", data, kol, (x + 4, y - 6, 8))
+    return (x, y - 9, 3.5), (x, y, 0.8), 35
+
+
+def bangun_shot():
+    """Buat kamera (dan set sementara bila perlu) serta marker untuk semua shot."""
+    scene = bpy.context.scene
+    induk = bpy.data.collections.new("Shot")
+    scene.collection.children.link(induk)
 
     scene.timeline_markers.clear()
     for shot in SHOTS:
-        kol = _koleksi(shot.nama)
-        x = (shot.nomor - 1) * JARAK_SET
-        _lantai(f"{shot.nama}_Lantai", kol, (x, 0, 0), lantai)
-        _kubus(f"{shot.nama}_Kubus", kol, (x - 1.5, 0, 0), kubus)
-        _tulisan(f"{shot.nama}_Nomor", f"SHOT {shot.nomor}", kol, (x + 1.2, 0, 0.6), huruf)
-        cam = _kamera(f"{shot.nama}_Kamera", kol, (x, -9, 3.5), (x, 0, 0.8))
-
+        kol = bpy.data.collections.new(shot.nama)
+        induk.children.link(kol)
+        if shot.nomor in KAMERA:
+            lokasi, sasaran, lensa = KAMERA[shot.nomor]
+        else:
+            lokasi, sasaran, lensa = _set_sementara(shot, kol)
+        cam = _kamera(f"{shot.nama}_Kamera", kol, lokasi, sasaran, lensa)
         marker = scene.timeline_markers.new(shot.nama, frame=shot.frame_mulai)
         marker.camera = cam
 
