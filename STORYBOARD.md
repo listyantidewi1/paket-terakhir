@@ -1,0 +1,28 @@
+# Storyboard — "Paket Terakhir Malam Ini"
+
+Film animasi pendek, 75 detik, tanpa narasi. Gaya realistis, malam hujan yang basah.
+Lokasi: Kota Senja, lalu Gang Melati.
+
+| No | Detik | Gambar | Gerakan kamera | Suara |
+|----|-------|--------|----------------|-------|
+| 1 | 0–7 | Jalan raya Kota Senja saat malam hujan. Aspal basah memantulkan lampu toko dan lampu jalan oranye. Sebuah motor dengan pengendara berponco kuning dan helm putih melaju menjauhi kamera, boks paket di jok belakang. | Wide, kamera rendah dekat genangan; *crane* pelan naik saat motor lewat lalu menjauh. | Hujan deras, ban menyibak genangan, deru motor menjauh, klakson samar di kejauhan. |
+| 2 | 7–20 | Jalan kecil yang gelap. Di setang, layar GPS menunjukkan panah "Belok kanan". Motor mulai berbelok ke kanan, lalu lampu depan menyorot kali yang deras tanpa pagar pembatas. Motor mengerem mendadak, ban depan berhenti tepat di bibir beton tepi kali. Diam. Panah di layar masih menunjuk ke kanan. Helm menoleh ke kali, lalu ke layar, lalu ke kali lagi. Kurir memutar setang dan berbelok ke **kiri**. | *Over-the-shoulder* dari belakang-atas bahu kurir, dengan layar GPS di *foreground* dan jalan di depan. Kamera ikut tersentak saat motor mengerem, lalu tahan statis selama jeda. Saat motor berbelok ke kiri, kamera tetap diam sehingga kali tetap di frame dan motor keluar frame. | Suara GPS, perempuan dan datar: **"Belok kanan."** Ban berdecit, kerikil jatuh ke air. Mesin *idle*, kali bergemuruh. GPS lagi, dengan intonasi persis sama: **"Belok kanan."** Mesin digas, motor menjauh ke kiri. |
+| 3 | 20–33 | Lampu merah di perempatan sepi. Di sudut ada warung yang sudah tutup, dengan bangku kayu di emperannya. Motor berhenti. Seekor kucing oren basah melompat dan duduk di atas boks paket. Lampu berubah hijau. Kucing tidak bergerak. **Jeda 1 detik**: kurir dan kucing sama-sama diam. Kurir turun, mengangkat kucing dengan dua tangan secara hati-hati, lalu menaruhnya di bangku warung. Kucing langsung duduk rapi. Kurir kembali ke motor. | Medium dari belakang-samping motor, dengan helm hanya terlihat dari belakang. *Rack focus* dari lampu merah ke kucing. Tahan statis selama jeda. *Pan* pelan mengikuti kurir ke bangku warung dan kembali. | Detak lampu penyeberangan, mesin *idle*, kucing mengeong pendek. Saat lampu hijau ada bunyi "tit" penyeberangan, lalu **1 detik hening** (semua suara diturunkan hampir nol). Suara kembali: langkah sepatu basah, kayu bangku berderit, kucing mendengkur sebentar. |
+| 4 | 33–40 | Masuk Gang Melati. Deretan rumah kecil yang semuanya berpagar hijau, nomor rumah samar. Motor melambat; senter ponsel menyorot nomor-nomor pagar satu per satu. | *Tracking* dari belakang motor menyusuri gang, lalu POV senter menyapu pagar dari kiri ke kanan. | Motor pelan, rantai pagar berderit tertiup angin, talang air menetes, TV samar dari dalam rumah. |
+| 5 | 40–48 | Motor berhenti di depan satu pagar hijau. Tangan bersarung mengambil paket dari boks, menyeka air dari label. Insert label: **"Penerima: Ayah"**. Tangan berhenti, diam beberapa saat. | Medium dari belakang bahu; *push-in* lambat ke label hingga *extreme close-up*. | Mesin dimatikan, hening mendadak; tinggal hujan rintik dan napas berat di balik helm. |
+| 6 | 48–54 | Dari belakang: kurir berdiri di teras, ponco meneteskan air, paket di tangan. Ia melepas helm (tetap dari belakang, rambut basah terlihat), lalu mengetuk pintu. Cahaya hangat merembes dari celah pintu. | Statis dari belakang kurir, sedikit *low angle*; kamera tidak pernah berputar ke depan. | Tiga ketukan pintu, langkah kaki kecil berlari dari dalam, kunci diputar. |
+| 7 | 54–66 | Pintu terbuka. Cahaya rumah yang terang ada di belakang anak, jadi anak tampak sebagai **siluet gelap**. Ia memegang kue ulang tahun setinggi dada, lilinnya menyala. Hanya kue dan api lilin yang terang. Anak menunjuk paket, lalu menunjuk dirinya. Tangan kurir menurunkan paket perlahan, lalu mengusap kepala siluet itu. | *Over-the-shoulder* dari belakang kurir (hanya bahu, telinga, rambut basah) yang membingkai siluet anak di ambang pintu. *Push-in* sangat pelan ke kue. | Langkah kaki berhenti, lalu satu-satunya kalimat anak: **"Selamat ulang tahun, Ayah!"** Api lilin berdesis kena tetes air dari ponco. Hujan di belakang. |
+| 8 | 66–75 | Exterior dari ujung gang: rumah berpagar hijau dengan pintu terbuka dan cahaya hangat; motor basah terparkir. Pintu menutup, gang kembali gelap. Judul muncul: **Paket Terakhir Malam Ini**. | Wide statis, lalu *pull-back* sangat pelan ke ujung gang; *fade* ke hitam pada detik 73. | Riuh teredam tanpa kata di balik pintu, pintu menutup, hujan kembali sendirian. Hening di layar judul. |
+
+**Total:** 7 + 13 + 13 + 7 + 8 + 6 + 12 + 9 = **75 detik**
+
+## Aturan kontinuitas
+
+- **Wajah kurir tidak pernah terlihat.** Kamera selalu di belakang, samping-belakang, atau setinggi dada. Kaca helm hanya memantulkan lampu, tidak transparan.
+- **Wajah anak tidak pernah terlihat.** Anak selalu berupa siluet dengan cahaya rumah dari belakang. Cahaya lilin tidak boleh menerangi wajahnya. Di Blender, batasi lampu lilin dengan *light linking* agar hanya mengenai kue, dan atur *exposure* untuk cahaya belakang.
+- **Suara manusia hanya dua:** suara GPS ("Belok kanan." dua kali dengan intonasi yang identik) dan satu kalimat anak. Kurir tidak bersuara.
+- Kostum tetap: helm putih, jas hujan ponco kuning, sarung tangan gelap.
+- Semua pagar di Gang Melati berwarna hijau, hanya nomor rumah yang membedakan.
+- Kucing oren hanya muncul di shot 3 dan ditinggal di bangku warung.
+- Tanpa narasi atau teks selain layar GPS, label paket, dan judul.
+- Cahaya: dingin (biru dan oranye lampu jalan) di shot 1–5, lalu hangat (lampu rumah, lilin) di shot 6–8.
