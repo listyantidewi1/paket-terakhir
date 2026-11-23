@@ -124,4 +124,7 @@ def buat(kol, motor, kejadian):
         mod = pemancar.modifiers.new(f"Cipratan_{n:02d}", "PARTICLE_SYSTEM")
         mod.particle_system.settings = st
         mod.particle_system.seed = 11 + n
+        # Cache hanya selama tetesan hidup (cepat dipanggang)
+        mod.particle_system.point_cache.frame_start = int(f0) - 1
+        mod.particle_system.point_cache.frame_end = int(f1) + int(st.lifetime * (1 + st.lifetime_random)) + 2
     return kejadian

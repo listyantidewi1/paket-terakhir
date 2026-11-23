@@ -19,8 +19,9 @@ Pose ditulis di POSE dalam koordinat armature (meter, derajat). Saat duduk,
 armature menjadi anak motor dengan titik pusat yang sama, sehingga koordinat
 pose = koordinat motor (pegangan setang, pijakan kaki, jok).
 
-Ponco: Armature lalu Cloth. Kerah dipin ke badan; kain bertumbukan dengan
-badan, jok, bodi, dan boks motor. Simulasi dimulai MULAI_KAIN frame sebelum
+Ponco: mesh yang mengikuti tulang (tanpa simulasi kain). Tepi bawahnya
+bergoyang lewat Displace yang kekuatannya mengikuti properti "laju" (m/s,
+dihitung oleh hitung_laju). Dulu: simulasi dimulai MULAI_KAIN frame sebelum
 shot supaya kain sudah jatuh tenang di frame pertama shot.
 """
 
@@ -491,6 +492,7 @@ def _ponco(kol, arm, nama="Kurir_Ponco"):
     ruas = {b.name: (b.head_local, b.tail_local) for b in arm.data.bones if b.name in calon}
     grup = {nama: obj.vertex_groups.new(name=nama) for nama in calon + ["lengan_atas.L", "lengan_atas.R"]}
     pin = obj.vertex_groups.new(name="pin")
+    tepi = obj.vertex_groups.new(name="tepi")  # kebalikan pin: bagian yang boleh bergoyang
     for idx, p in enumerate(titik):
         jarak = []
         for nama_t, (a, b) in ruas.items():
@@ -511,26 +513,28 @@ def _ponco(kol, arm, nama="Kurir_Ponco"):
             u = min(1.0, max(0.0, (p.z - z_ujung[idx]) / TEPI_BEBAS))
             w_pin = u * u * (3 - 2 * u)
         pin.add([idx], w_pin, "REPLACE")
+        if w_pin < 1.0:
+            tepi.add([idx], 1.0 - w_pin, "REPLACE")
     _ke_armature(obj, arm)
     obj.modifiers["Armature"].use_deform_preserve_volume = True
 
-    kain = obj.modifiers.new("Kain", "CLOTH")
-    st = kain.settings
-    st.quality = 8
-    st.mass = 0.25
-    st.tension_stiffness = 15
-    st.compression_stiffness = 15
-    st.shear_stiffness = 5
-    st.bending_stiffness = 2.0
-    st.air_damping = 1.0
-    st.vertex_group_mass = "pin"
-    st.pin_stiffness = 8.0  # bagian berpin < 1 di pita tepi tetap cepat kembali ke bentuknya
-    cs = kain.collision_settings
-    cs.use_collision = True
-    cs.distance_min = 0.015
-    cs.friction = 80.0  # PVC basah tidak licin di atas jaket, celana, dan jok (maksimum Blender)
-    cs.collision_quality = 5
-    cs.use_self_collision = False
+    # Tepi bawah bergoyang tanpa simulasi: Displace dengan noise berkoordinat dunia,
+    # hanya pada grup "tepi" (15 cm terbawah). Polanya bergulir saat kurir
+    # bergerak dan diam saat kurir diam; kekuatannya mengikuti properti "laju".
+    tekstur = bpy.data.textures.get("Ponco_Angin") or bpy.data.textures.new("Ponco_Angin", "CLOUDS")
+    tekstur.noise_scale = 0.18
+    goyang = obj.modifiers.new("Goyang", "DISPLACE")
+    goyang.texture = tekstur
+    goyang.texture_coords = "GLOBAL"
+    goyang.direction = "NORMAL"
+    goyang.vertex_group = "tepi"
+    goyang.mid_level = 0.5
+    fc = goyang.driver_add("strength")
+    var = fc.driver.variables.new()
+    var.name, var.type = "v", "SINGLE_PROP"
+    var.targets[0].id = arm
+    var.targets[0].data_path = '["laju"]'
+    fc.driver.expression = "0.012 + 0.008 * min(v, 8)"
     sub = obj.modifiers.new("Halus", "SUBSURF")
     sub.levels = sub.render_levels = 1
     sol = obj.modifiers.new("Tebal", "SOLIDIFY")
@@ -582,6 +586,7 @@ def _armature(kol, nama):
             rot.subtarget = f"{sasaran}.{s}"
     # Helm: ikut kepala, atau tangan kanan saat helm_di_tangan = 1
     arm["helm_di_tangan"] = 0.0
+    arm["laju"] = 0.0
     ke_kepala = pb["helm"].constraints.new("COPY_TRANSFORMS")
     ke_kepala.target, ke_kepala.subtarget = arm, "soket_kepala"
     ke_tangan = pb["helm"].constraints.new("COPY_TRANSFORMS")
@@ -663,18 +668,11 @@ def duduk_di(arm, motor, frame_mulai, frame_selesai):
     arm.rotation_euler = (0, 0, 0)
     terapkan_pose(arm, "duduk_tangan_turun", frame=frame_mulai - MULAI_KAIN)
     terapkan_pose(arm, "duduk_motor", frame=frame_mulai - MULAI_KAIN + 30)
-    atur_kain(frame_mulai - MULAI_KAIN, frame_selesai)
     for o in motor.children_recursive:
         if (o.type == "MESH" and o.name.startswith(("Motor_Jok", "Motor_Bodi", "Motor_Dek", "Motor_Tameng",
                                                      "Motor_Boks", "Motor_Hidung"))
                 and "strip_pemantul" not in o.name):
             pasang_tumbukan(o, 0.008)
-
-
-def atur_kain(mulai, selesai, nama="Kurir_Ponco"):
-    kain = bpy.data.objects[nama].modifiers["Kain"]
-    kain.point_cache.frame_start = mulai
-    kain.point_cache.frame_end = selesai
 
 
 # Berjalan sambil menggendong: kaki dari pose jalan, tangan dari bawa_kucing
@@ -695,37 +693,6 @@ def kunci_tempat(arm, frame, lokasi, arah_derajat):
     arm.rotation_euler = (0, 0, math.radians(arah_derajat))
     arm.keyframe_insert("location", frame=frame)
     arm.keyframe_insert("rotation_euler", index=2, frame=frame)
-
-
-def ponco_shot(kol, arm, nama, mulai, selesai, tenang=False, goal=0.2):
-    """Ponco tambahan dengan cache simulasinya sendiri untuk satu shot.
-
-    Cache simulasi kain hanya satu rentang frame, dan di batas shot kurir
-    berpindah tempat (kain akan meledak). Jadi tiap shot memakai ponco sendiri
-    dan hanya tampil di render pada shot-nya (lihat tampil_di).
-    """
-    obj = _ponco(kol, arm, nama)
-    atur_kain(mulai, selesai, nama)
-    if tenang:
-        _tenangkan(obj.modifiers["Kain"].settings, goal)
-    return obj
-
-
-def _tenangkan(st, goal=0.2):
-    """Ponco untuk adegan turun dan berjalan: tetap menggantung di badan.
-
-    Setiap titik kain ditarik lembut (goal minimum 0,2) ke bentuk ponco yang
-    mengikuti badan, goyangannya diredam, dan angin tidak berpengaruh. Kain
-    masih bergoyang sedikit dan masih bertumbukan dengan badan dan kucing.
-    """
-    st.goal_min = goal  # 0 untuk adegan berdiri: kain menjuntai bebas, tidak ditarik ke bentuk lonceng
-    st.goal_friction = 3.0
-    st.pin_stiffness = 3.0
-    st.air_damping = 1.0
-    st.tension_damping = 15.0
-    st.compression_damping = 15.0
-    st.bending_damping = 2.0
-    st.effector_weights.wind = 0.0
 
 
 def tampil_di(obj, frame_awal, frame_akhir):
@@ -844,3 +811,50 @@ def _rambut(kol, arm):
     obj.parent_type = "BONE"
     obj.parent_bone = "kepala"
     return obj
+
+
+def tampil_rentang(obj, rentang):
+    """Objek hanya tampil di render pada rentang frame yang diberikan [(awal, akhir), ...]."""
+    obj.hide_render = True
+    obj.keyframe_insert("hide_render", frame=min(a for a, _ in rentang) - 1)
+    for a, b in rentang:
+        obj.hide_render = False
+        obj.keyframe_insert("hide_render", frame=a)
+        obj.hide_render = True
+        obj.keyframe_insert("hide_render", frame=b + 1)
+
+
+
+
+def hitung_laju(arm, motor, frame_awal, frame_akhir):
+    """Isi properti "laju" (m/s) kurir per frame dari kurva animasi motor dan kurir.
+
+    Tanpa menjalankan adegan: posisi dunia = lokasi motor + putaran motor (Z)
+    x lokasi kurir. Lompatan di potongan shot (lebih dari 15 m/s) diabaikan.
+    """
+    from bpy_extras import anim_utils
+    from mathutils import Matrix
+
+    def kurva(obj):
+        ad = obj.animation_data
+        cb = anim_utils.action_get_channelbag_for_slot(ad.action, ad.action_slot)
+        return lambda jalur, i, f, d=0.0: (cb.fcurves.find(jalur, index=i).evaluate(f)
+                                           if cb.fcurves.find(jalur, index=i) else d)
+
+    km, kk = kurva(motor), kurva(arm)
+    fps = bpy.context.scene.render.fps
+
+    def posisi(f):
+        m_lok = Vector([km("location", i, f) for i in range(3)])
+        k_lok = Vector([kk("location", i, f) for i in range(3)])
+        return m_lok + Matrix.Rotation(km("rotation_euler", 2, f), 3, "Z") @ k_lok
+
+    lalu, laju = posisi(frame_awal), 0.0
+    for f in range(frame_awal, frame_akhir + 1):
+        p = posisi(f)
+        v = (p - lalu).length * fps
+        if v < 15:
+            laju = v
+        arm["laju"] = laju
+        arm.keyframe_insert('["laju"]', frame=f)
+        lalu = p

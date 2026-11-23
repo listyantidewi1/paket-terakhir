@@ -496,9 +496,12 @@ def taruh(motor, lokasi, arah_derajat=0.0):
 def animasi_jalan(motor, kunci, halus=True, permukaan=None):
     """Gerakkan motor lewat titik kunci, dan isi jarak_tempuh frame demi frame.
 
-    kunci: daftar (frame, (x, y, z), arah_derajat), frame naik.
-    halus: True = percepat/perlambat (smoothstep) di antara kunci,
-           False = kecepatan tetap (linear).
+    kunci: daftar (frame, (x, y, z), arah_derajat[, easing]), frame naik.
+           easing (opsional) berlaku untuk segmen yang berakhir di kunci itu:
+           "linear", "halus" (percepat lalu perlambat), "keluar" (melambat
+           sampai berhenti, misalnya mengerem), "masuk" (mempercepat).
+    halus: easing bawaan bila kunci tidak menyebutkannya: True = "halus",
+           False = "linear" (kecepatan tetap).
     permukaan: fungsi (x, y) -> tinggi jalan (polisi tidur). Bila ada, motor
            naik dan mengangguk mengikuti tinggi di bawah roda depan dan belakang.
     Jarak dijumlahkan dari perpindahan nyata tiap frame, jadi putaran roda
@@ -509,14 +512,15 @@ def animasi_jalan(motor, kunci, halus=True, permukaan=None):
     jarak = 0.0
     sebelum = None
     jalur = []
-    for (f0, p0, a0), (f1, p1, a1) in zip(kunci, kunci[1:]):
+    for k0, k1 in zip(kunci, kunci[1:]):
+        (f0, p0, a0), (f1, p1, a1) = k0[:3], k1[:3]
+        easing = k1[3] if len(k1) > 3 else ("halus" if halus else "linear")
         p0, p1 = Vector(p0), Vector(p1)
         for f in range(int(f0), int(f1) + 1):
             if sebelum is not None and f == sebelum[0]:
                 continue
             t = (f - f0) / (f1 - f0)
-            if halus:
-                t = t * t * (3 - 2 * t)
+            t = {"linear": t, "halus": t * t * (3 - 2 * t), "keluar": 1 - (1 - t) ** 2, "masuk": t * t}[easing]
             p = p0.lerp(p1, t)
             arah = math.radians(a0 + (a1 - a0) * t)
             angguk = 0.0

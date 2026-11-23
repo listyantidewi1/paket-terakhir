@@ -18,6 +18,7 @@ lalu disusun menjadi satu lembar dengan numpy, tanpa pustaka tambahan.
 
 import os
 import sys
+import time
 
 import bpy
 import numpy as np
@@ -34,6 +35,9 @@ SISI_PENDEK = 480
 SAMPEL = 8
 KOLOM = 4
 CELAH = 8  # piksel antar gambar di lembar
+
+
+WAKTU = []  # (frame, detik) tiap render
 
 
 def argumen():
@@ -58,6 +62,10 @@ def atur_render_kecil(scene):
     scene.cycles.use_denoising = True
     scene.cycles.denoiser = "OPENIMAGEDENOISE"
     scene.cycles.device = "CPU"
+    # Motion blur dan fokus kabur hanya untuk render akhir; cek harus cepat
+    r.use_motion_blur = False
+    for cam in bpy.data.cameras:
+        cam.dof.use_dof = False
     r.image_settings.file_format = "PNG"
     r.image_settings.color_mode = "RGBA"
 
@@ -70,42 +78,78 @@ def atur_render_kecil(scene):
     r.stamp_font_size = 20
 
 
-_KAIN = {"terakhir": None}
-
-
-def kain_sampai(scene, frame):
-    """Jalankan simulasi kain frame demi frame sampai `frame`.
-
-    Simulasi kain hanya benar bila dihitung berurutan dari awal cache-nya
-    (termasuk frame pra-gulir negatif). Frame yang sudah dihitung tersimpan
-    di cache memori, jadi render frame berikutnya melanjutkan saja.
-    """
-    mulai = None
+def _cache_semua(scene):
+    """Semua point cache simulasi (kain ponco dan partikel cipratan)."""
     for o in scene.objects:
         for m in o.modifiers:
-            if m.type == "CLOTH" and m.point_cache.frame_start <= frame <= m.point_cache.frame_end:
-                a = m.point_cache.frame_start
-                mulai = a if mulai is None else min(mulai, a)
-    if mulai is None:
+            if m.type == "CLOTH":
+                yield o.name, m.point_cache
+        for ps in o.particle_systems:
+            yield o.name, ps.point_cache
+
+
+FOLDER_CACHE = os.path.join(AKAR, "blendcache_film")
+
+
+def _ada_di_disk(pc):
+    """Cache sudah tersimpan di disk (semua frame rentangnya)?"""
+    if not os.path.isdir(FOLDER_CACHE):
+        return False
+    awalan = pc.name + "_"
+    n = sum(1 for nm in os.listdir(FOLDER_CACHE) if nm.startswith(awalan))
+    return n >= (pc.frame_end - pc.frame_start + 1)
+
+
+def pastikan_panggang(scene):
+    """Hitung simulasi (kain, cipratan) sekali, tersimpan di disk; cek berikutnya langsung memakainya.
+
+    Simulasi dijalankan frame demi frame hanya pada rentang tiap cache, dan
+    cache disk (blendcache_film/, nama dari sidik kode di bangun.py) menyimpan
+    hasilnya. Selama kode tidak berubah, film.blend yang dibangun ulang tetap
+    memakai cache yang sama.
+    """
+    rentang = []
+    for nama, pc in _cache_semua(scene):
+        if not pc.use_disk_cache:
+            print(f"[cek] PERINGATAN: cache {nama} tidak di disk; jalankan ulang bangun.py")
+        if not pc.is_baked:
+            rentang.append((pc.frame_start, pc.frame_end))
+    if not rentang:
+        print("[cek] simulasi sudah dipanggang, langsung render")
         return
-    t = _KAIN["terakhir"]
-    dari = t + 1 if t is not None and mulai <= t < frame else mulai
-    if t is None or t < frame:
-        print(f"[cek] simulasi kain frame {dari} sampai {frame}")
-        for f in range(dari, frame + 1):
+    rentang.sort()  # gabungkan rentang yang tumpang tindih, lalu jalankan berurutan
+    gabung = [list(rentang[0])]
+    for a, b in rentang[1:]:
+        if a <= gabung[-1][1] + 1:
+            gabung[-1][1] = max(gabung[-1][1], b)
+        else:
+            gabung.append([a, b])
+    mulai = time.time()
+    total = sum(b - a + 1 for a, b in gabung)
+    print(f"[cek] menghitung simulasi sekali: {total} frame dalam rentang {gabung}", flush=True)
+    for a, b in gabung:
+        for f in range(a, b + 1):
             scene.frame_set(f)
-        _KAIN["terakhir"] = frame
+    # Jadikan frame yang sudah dihitung sebagai cache terpanggang (tanpa menghitung ulang),
+    # supaya tetap terpakai setelah berkas dibuka lagi.
+    for nama, pc in _cache_semua(scene):
+        if not pc.is_baked:
+            with bpy.context.temp_override(point_cache=pc):
+                bpy.ops.ptcache.bake_from_cache()
+    bpy.ops.wm.save_mainfile()
+    print(f"[cek] simulasi dihitung sekali dan dipanggang dalam {time.time() - mulai:.0f} detik", flush=True)
 
 
 def render_frame(scene, frame):
     s = shot_untuk(frame)
-    kain_sampai(scene, frame)
+    mulai = time.time()
     scene.frame_set(frame)
     scene.render.stamp_note_text = f"{s.nama}  frame {frame}  ({s.judul})"
     jalur = os.path.join(FOLDER, f"frame_{frame:04d}.png")
     scene.render.filepath = jalur
     bpy.ops.render.render(write_still=True)
-    print(f"[cek] {jalur}")
+    WAKTU.append((frame, time.time() - mulai))
+    print(f"[cek] {jalur} ({WAKTU[-1][1]:.1f} detik)")
     return jalur
 
 
@@ -162,7 +206,6 @@ def render_dekat(scene, frame, jenis):
     if acuan is None:
         print(f"[cek] tidak ada objek {nama}")
         return
-    kain_sampai(scene, frame)
     scene.frame_set(frame)
     mw = acuan.matrix_world
     data = bpy.data.cameras.new(f"Cek_{jenis}")
@@ -205,11 +248,16 @@ def main():
     else:
         frames = [int(a) for a in arg] or [s.frame_tengah for s in waktu.SHOTS]
     scene = bpy.context.scene
+    pastikan_panggang(scene)
     atur_render_kecil(scene)
     if frames and not (dekat and not arg):
         susun_lembar([render_frame(scene, f) for f in frames])
     for jenis in dekat:
         render_dekat(scene, frames[0] if frames else waktu.SHOTS[0].frame_tengah, jenis)
+    if WAKTU:
+        rata = sum(t for _, t in WAKTU) / len(WAKTU)
+        print(f"[cek] waktu render per frame: rata-rata {rata:.1f} detik, "
+              f"terlama {max(t for _, t in WAKTU):.1f} detik ({len(WAKTU)} frame)")
 
 
 main()

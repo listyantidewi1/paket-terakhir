@@ -43,6 +43,9 @@ def _kamera_rumah():
         6: (P + luar * 1.8 + kanan * 0.6 + Vector((0, 0, 0.8)), P + Vector((0, 0, 0.95)) - luar * 0.2, 20),
         # Over-the-shoulder dari belakang bahu kanan kurir
         7: (P7 + luar * 0.8 + kanan * 0.95 + Vector((0, 0, 1.85)), tengah7, 35),
+        # Shot 5 dan 8: posisi awal saja; gerakannya diatur di kamera.py
+        5: (P + luar * 2 + Vector((0, 0, 1.5)), P, 85),
+        8: (P + luar * 3 + Vector((0, 6, 1.7)), P, 24),
     }
 
 

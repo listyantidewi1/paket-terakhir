@@ -77,29 +77,69 @@ def _ke_dunia(m, p):
 
 
 def shot2(m, arm):
-    """Shot 2: motor di jalan kecil tepi kali (diam untuk sementara).
-
-    Motor ada di tepi kali sampai frame sebelum pra-gulir kain shot 3. Menurut
-    storyboard motor sudah keluar frame di akhir shot 2, jadi 3 detik terakhir
-    shot 2 bisa dipakai pra-gulir shot 3 di lampu merah.
-    Kurir disembunyikan dari render di shot 2: kamera ada di atas setang
-    menatap ke depan, dan ponconya belum disimulasikan untuk shot ini.
+    """Shot 2: jalan kecil tepi kali. Motor melaju, belok kanan ke arah kali,
+    mengerem mendadak di tepi beton, diam (GPS mengulang), lalu belok kiri dan
+    keluar frame sebelum frame pra-gulir shot 3.
     """
-    s1, s2, s3 = waktu.SHOTS[0], waktu.SHOTS[1], waktu.SHOTS[2]
-    scene = bpy.context.scene
-    scene.frame_set(s1.frame_selesai)
-    jarak1 = m["jarak_tempuh"]
-    pra3 = s3.frame_mulai - kurir.MULAI_KAIN
-    kali = kota.TITIK["motor_kali"]
-    _kunci_motor_diam(m, s2.frame_mulai, kali, jarak1)
-    _kunci_motor_diam(m, pra3 - 1, kali, jarak1)
-    for nama in ("Kurir_Tubuh", "Kurir_Helm"):
+    s2 = waktu.SHOTS[1]
+    X = kota.KALI_X
+    motor_jalan = __import__("film.motor", fromlist=["animasi_jalan"]).animasi_jalan
+    motor_jalan(m, [
+        (s2.frame_mulai, (X - 3.0, 8.0, 0.0), 0.0),
+        (215, (X - 3.0, 24.0, 0.0), 0.0, "linear"),          # 20 km/jam
+        (MOTOR_REM, (X - 1.6, 28.3, 0.0), -38.0, "keluar"),  # belok kanan, mengerem sampai berhenti
+        (340, (X - 1.6, 28.3, 0.0), -38.0, "linear"),        # diam: "Belok kanan." diulang
+        (400, (X - 12.0, 32.0, 0.0), 90.0, "masuk"),         # belok kiri, keluar frame
+        (408, (X - 16.0, 32.0, 0.0), 90.0, "linear"),
+    ], halus=False)
+
+
+MOTOR_REM = 245  # frame motor berhenti di tepi kali (kamera tersentak)
+
+
+def shot45(m, arm, kol_kurir):
+    """Shot 4-5: motor menyusuri Gang Melati lalu berhenti di depan rumah tujuan;
+    di shot 5 tutup boks terbuka (label paket di dalam). Kurir duduk di motor
+    dengan ponco tanpa simulasi; di shot 2 juga.
+    """
+    s2, s4, s5 = waktu.SHOTS[1], waktu.SHOTS[3], waktu.SHOTS[4]
+    teras = kota.TITIK["teras_tujuan"]
+    berhenti = Vector((kota.GANG_X - 0.7, teras.y, 0.05))
+    motor_jalan = __import__("film.motor", fromlist=["animasi_jalan"]).animasi_jalan
+    motor_jalan(m, [
+        (s4.frame_mulai, (kota.GANG_X - 0.2, -16.0, 0.05), 0.0),
+        (955, tuple(berhenti), 0.0, "keluar"),  # melambat sampai berhenti di depan pagar hijau
+        (waktu.SHOTS[-1].frame_selesai, tuple(berhenti), 0.0, "linear"),
+    ], halus=False)
+    kurir.kunci_tempat(arm, s4.frame_mulai - 1, (-0.9, -0.9, 0), -409)
+    kurir.kunci_tempat(arm, s4.frame_mulai, (0, 0, 0), 0)
+    kurir.terapkan_pose(arm, "duduk_motor", frame=s4.frame_mulai)
+    # Tutup boks terbuka selama shot 5 (engsel di belakang, berputar pada sumbu X)
+    tutup = bpy.data.objects["Motor_Boks_Tutup"]
+    for f, sudut in ((s5.frame_mulai - 1, 0.0), (s5.frame_mulai, 105.0), (s5.frame_selesai, 105.0),
+                     (s5.frame_selesai + 1, 0.0)):
+        tutup.rotation_euler = (math.radians(sudut), 0, 0)
+        tutup.keyframe_insert("rotation_euler", index=0, frame=f)
+    _konstan_jalur(tutup)
+
+
+def _konstan_jalur(obj):
+    _konstan(obj)
+
+
+def shot8(arm):
+    """Shot 8: kurir sudah masuk rumah; pintu menutup perlahan, gang kembali gelap."""
+    s8 = waktu.SHOTS[7]
+    for nama in ("Kurir_Tubuh", "Kurir_Helm", "Kurir_Rambut", "Kurir_Ponco"):
         obj = bpy.data.objects[nama]
-        for f, sembunyi in ((s2.frame_mulai - 1, False), (s2.frame_mulai, True),
-                            (s2.frame_selesai, True), (s2.frame_selesai + 1, False)):
+        for f, sembunyi in ((s8.frame_mulai - 1, False), (s8.frame_mulai, True)):
             obj.hide_render = sembunyi
             obj.keyframe_insert("hide_render", frame=f)
-    scene.frame_set(1)
+    pintu = bpy.data.objects["Pintu_Tujuan"]
+    buka = math.radians(pintu["buka_derajat"])
+    for f, sudut in ((1640, buka), (1700, 0.0)):
+        pintu.rotation_euler = (0, 0, sudut)
+        pintu.keyframe_insert("rotation_euler", index=2, frame=f)
 
 
 def shot3(m, arm, kc, kol_kurir):
@@ -117,11 +157,6 @@ def shot3(m, arm, kc, kol_kurir):
     _kunci_motor_diam(m, pra, M, jarak1)
     _kunci_motor_diam(m, s3.frame_selesai, M, jarak1)
 
-    # --- Ponco: ponco shot 1 hanya tampil di shot 1; ponco shot 3 punya cache sendiri
-    kurir.tampil_di(bpy.data.objects["Kurir_Ponco"], -10000, s1.frame_selesai)
-    # Ponco ditenangkan: di shot ini kurir turun dan berjalan, kain tidak boleh terbang
-    p3 = kurir.ponco_shot(kol_kurir, arm, "Kurir_Ponco_S3", pra, s3.frame_selesai, tenang=True)
-    kurir.tampil_di(p3, s3.frame_mulai, s3.frame_selesai)
 
     # --- Kurir duduk lagi (pra-gulir kain seperti shot 1), lalu adegan
     tp = kurir.terapkan_pose
@@ -303,9 +338,6 @@ def shot67(m, arm, kol_kurir, kol_anak):
     kurir.kunci_tempat(arm, s7.frame_mulai, teras + kiri, arah)
     kurir.kunci_tempat(arm, s7.frame_selesai, teras + kiri, arah)
 
-    # Berdiri saja: tanpa angin dan teredam, tetapi tanpa tarikan ke bentuk lonceng awal
-    p67 = kurir.ponco_shot(kol_kurir, arm, "Kurir_Ponco_S67", pra, s7.frame_selesai, tenang=True, goal=0.0)
-    kurir.tampil_di(p67, s6.frame_mulai, s7.frame_selesai)
 
     tp = kurir.terapkan_pose
     # Helm sudah dilepas sejak awal shot 6, tergantung di pergelangan kiri;
