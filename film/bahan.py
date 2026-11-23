@@ -341,29 +341,75 @@ def rolling_door(nama, warna=(0.28, 0.29, 0.3)):
 
 
 def air(nama):
-    """Air kali: gelap, licin, riak bergerak (noise 4D dianimasikan)."""
+    """Air kali yang deras dan keruh sehabis hujan.
+
+    Gelombang memanjang searah arus (noise diregangkan di sumbu Y) yang mengalir
+    ke -Y sekitar 2,5 m/s dan terus berubah bentuk (noise 4D), ditambah riak
+    kecil dan cincin tetes hujan. Puncak gelombang berbuih kecokelatan. Permukaan
+    licin, jadi lampu (lampu jalan, lampu depan motor) terpantul pecah-pecah
+    memanjang di atas gelombang.
+    """
     b, p = _bahan_baru(nama)
     bsdf, _ = _bsdf(p)
     koor = p.n("ShaderNodeTexCoord")
-    peta = p.n("ShaderNodeMapping")
-    p.isi(peta, "Scale", (0.8, 0.25, 1.0))
-    p.s(koor.outputs["Object"], peta.inputs["Vector"])
-    noise = p.n("ShaderNodeTexNoise", noise_dimensions="4D", name="Riak")
-    p.isi(noise, "Scale", 3.0)
-    p.isi(noise, "Detail", 6.0)
-    p.s(peta.outputs["Vector"], noise.inputs["Vector"])
+    waktu = p.n("ShaderNodeValue", name="Waktu_Arus")
+    sok = waktu.outputs[0]
+    sok.default_value = 0.0
+    sok.keyframe_insert("default_value", frame=1)
+    sok.default_value = 1.0
+    sok.keyframe_insert("default_value", frame=25)  # 1 satuan per detik
+
+    # Arus: geser koordinat ke +Y (pola bergerak ke -Y) 2,5 m/s
+    geser = p.n("ShaderNodeCombineXYZ")
+    p.s(p.math("MULTIPLY", sok, 2.5), geser.inputs["Y"])
+    alir = p.n("ShaderNodeVectorMath", operation="ADD")
+    p.s(koor.outputs["Object"], alir.inputs[0])
+    p.s(geser.outputs[0], alir.inputs[1])
+    regang = p.n("ShaderNodeMapping")
+    p.isi(regang, "Scale", (1.6, 0.35, 1.0))
+    p.s(alir.outputs[0], regang.inputs["Vector"])
+
+    gelombang = p.n("ShaderNodeTexNoise", noise_dimensions="4D", name="Riak")
+    p.isi(gelombang, "Scale", 1.6)
+    p.isi(gelombang, "Detail", 8.0)
+    p.isi(gelombang, "Roughness", 0.62)
+    p.s(regang.outputs["Vector"], gelombang.inputs["Vector"])
+    p.s(p.math("MULTIPLY", sok, 0.7), _sok(gelombang.inputs, "W"))
+
+    riak = p.n("ShaderNodeTexNoise", noise_dimensions="4D")
+    p.isi(riak, "Scale", 9.0)
+    p.isi(riak, "Detail", 3.0)
+    p.s(alir.outputs[0], riak.inputs["Vector"])
+    p.s(p.math("MULTIPLY", sok, 2.0), _sok(riak.inputs, "W"))
+    tetes = p.n("ShaderNodeGroup", node_tree=riak_hujan())
+    p.s(koor.outputs["Object"], tetes.inputs[0])
+
+    tinggi = p.math("ADD", p.math("MULTIPLY", gelombang.outputs["Fac"], 1.0),
+                    p.math("ADD", p.math("MULTIPLY", riak.outputs["Fac"], 0.25),
+                           p.math("MULTIPLY", tetes.outputs[0], 0.04)))
     bump = p.n("ShaderNodeBump")
-    p.isi(bump, "Strength", 0.08)
-    p.s(noise.outputs["Fac"], bump.inputs["Height"])
+    p.isi(bump, "Strength", 0.3)  # cukup halus untuk pantulan lampu yang memanjang
+    p.isi(bump, "Distance", 0.25)
+    p.s(tinggi, bump.inputs["Height"])
     p.s(bump.outputs["Normal"], bsdf.inputs["Normal"])
-    p.isi(bsdf, "Base Color", (0.015, 0.018, 0.012, 1))
-    p.isi(bsdf, "Roughness", 0.04)
+
+    # Buih di puncak gelombang
+    buih = p.n("ShaderNodeMapRange")
+    p.isi(buih, "From Min", 0.64)
+    p.isi(buih, "From Max", 0.75)
+    p.s(p.math("ADD", gelombang.outputs["Fac"], p.math("MULTIPLY", riak.outputs["Fac"], 0.12)),
+        buih.inputs["Value"])
+    warna = p.n("ShaderNodeMix", data_type="RGBA")
+    p.s(buih.outputs["Result"], warna.inputs["Factor"])
+    _sok(warna.inputs, "A_Color").default_value = (0.03, 0.026, 0.017, 1)  # keruh cokelat gelap
+    _sok(warna.inputs, "B_Color").default_value = (0.22, 0.2, 0.16, 1)  # buih kecokelatan
+    p.s(_sok(warna.outputs, "Result_Color"), bsdf.inputs["Base Color"])
+    kasar = p.n("ShaderNodeMapRange")
+    p.s(buih.outputs["Result"], kasar.inputs["Value"])
+    p.isi(kasar, "To Min", 0.03)
+    p.isi(kasar, "To Max", 0.4)
+    p.s(kasar.outputs["Result"], bsdf.inputs["Roughness"])
     p.isi(bsdf, "IOR", 1.33)
-    w = _sok(noise.inputs, "W")
-    w.default_value = 0.0
-    w.keyframe_insert("default_value", frame=1)
-    w.default_value = 1.5
-    w.keyframe_insert("default_value", frame=25)
     from .geo import animasi_linear
     animasi_linear(b.node_tree)
     return b

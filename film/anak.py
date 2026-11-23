@@ -22,6 +22,42 @@ from .geo import Gabung, Kanvas
 
 SEED = 1997
 TINGGI_KUE = 0.74  # tinggi permukaan piring kue dari lantai
+POSISI_KUE = Vector((0, 0.24, TINGGI_KUE))  # disodorkan sedikit ke depan
+CONDONG = 7.0  # derajat badan condong ke depan (poros di pinggul)
+
+
+def _condong(derajat, poros=Vector((0, 0, 0.5))):
+    """Fungsi titik -> titik: badan atas diputar ke depan (+Y) di sekitar pinggul."""
+    from mathutils import Matrix
+    r = Matrix.Rotation(math.radians(-derajat), 3, "X")
+    return lambda p: poros + r @ (Vector(p) - poros)
+
+
+def _loft(g, ruas, n=16, tutup_bawah=True):
+    """Tabung lembut melewati beberapa titik: [(pusat, jari_u, jari_w, gelombang), ...].
+
+    Penampang tegak lurus arah ruas; gelombang membuat tepi kain tidak rata.
+    """
+    titik, muka = [], []
+    for k, (c, ru, rw, gel) in enumerate(ruas):
+        a = ruas[max(k - 1, 0)][0]
+        b = ruas[min(k + 1, len(ruas) - 1)][0]
+        sumbu = (b - a).normalized()
+        bantu = Vector((1, 0, 0)) if abs(sumbu.x) < 0.9 else Vector((0, 1, 0))
+        u = (bantu - sumbu * bantu.dot(sumbu)).normalized()
+        w = sumbu.cross(u)
+        for i in range(n):
+            t = 2 * math.pi * i / n
+            r = 1 + gel / max(ru, 1e-3) * math.sin(5 * t + 0.7 * k) if gel else 1
+            titik.append(c + (u * math.cos(t) * ru + w * math.sin(t) * rw) * r)
+    for k in range(len(ruas) - 1):
+        for i in range(n):
+            p, q = k * n, (k + 1) * n
+            muka.append((p + i, p + (i + 1) % n, q + (i + 1) % n, q + i))
+    if tutup_bawah:
+        muka.append(tuple(reversed(range(n))))
+    muka.append(tuple(range((len(ruas) - 1) * n, len(ruas) * n)))
+    g.poly(titik, muka)
 
 
 def _bahan():
@@ -47,34 +83,39 @@ def buat_anak(kol, lokasi, arah_derajat):
     akar.location = lokasi
     akar.rotation_euler = (0, 0, math.radians(arah_derajat))
 
-    # Anak sekitar 110 cm: kepala bulat berambut, baju sedikit melebar, lengan dan
-    # kaki membulat (sendi bulat), kedua tangan memegang tepi piring di depan dada.
+    # Anak umur enam tahun (sekitar 112 cm): kepala besar (seperlima tinggi),
+    # badan pendek, baju tidur longgar yang ujungnya bergelombang, celana tidur
+    # lebar, lutut sedikit menekuk, badan condong ke depan menyodorkan kue.
     k = Kanvas("Anak_Siluet", kol)
     g = k["siluet"]
-    for x in (-0.055, 0.055):  # kaki dan sepatu
-        g.tabung((x, 0.0, 0.04), (x, 0.0, 0.44), 0.042, n=12)
-        g.bola((x, 0.0, 0.44), (0.045, 0.045, 0.045), rimbun=0)
-        g.bola((x, 0.035, 0.035), (0.042, 0.075, 0.035), rimbun=0)
-    g.bola((0, 0.0, 0.5), (0.115, 0.085, 0.08), rimbun=0)  # pinggul, ujung baju
-    g.bola((0, 0.0, 0.65), (0.125, 0.09, 0.17), rimbun=0)  # badan
-    g.bola((0, 0.0, 0.82), (0.135, 0.08, 0.06), rimbun=0)  # bahu membulat
-    g.tabung((0, 0.0, 0.84), (0, 0.005, 0.92), 0.038, n=10)  # leher
-    g.bola((0, 0.01, 1.0), (0.088, 0.095, 0.098), rimbun=0)  # kepala bulat
-    g.bola((0, -0.006, 1.02), (0.097, 0.1, 0.09), rimbun=0)  # rambut
+    condong = _condong(CONDONG)
+    for x in (-0.065, 0.065):  # celana tidur: pinggul, lutut (sedikit ke depan), pergelangan
+        _loft(g, [(Vector((x, -0.012, 0.55)), 0.075, 0.075, 0.0), (Vector((x, 0.02, 0.42)), 0.068, 0.07, 0.003),
+                  (Vector((x, 0.055, 0.29)), 0.062, 0.064, 0.004), (Vector((x, 0.035, 0.17)), 0.062, 0.064, 0.004),
+                  (Vector((x, 0.01, 0.05)), 0.066, 0.068, 0.007)])
+        g.bola((x * 1.05, 0.045, 0.032), (0.045, 0.085, 0.032), rimbun=0)  # sandal rumah
+    g.bola((0, 0.0, 0.53), (0.13, 0.095, 0.08), rimbun=0)  # pinggul
+    # Baju tidur: lebar dan longgar, ujung bawah bergelombang
+    _loft(g, [(condong(Vector((0, 0, z))), rx, ry, gel) for z, rx, ry, gel in (
+        (0.43, 0.185, 0.14, 0.018), (0.5, 0.17, 0.127, 0.01), (0.6, 0.152, 0.11, 0.004),
+        (0.72, 0.143, 0.1, 0.0), (0.79, 0.135, 0.092, 0.0), (0.83, 0.1, 0.075, 0.0), (0.855, 0.05, 0.048, 0.0))],
+          tutup_bawah=True)
+    g.tabung(condong(Vector((0, 0, 0.83))), condong(Vector((0, 0.008, 0.9))), 0.034, n=10)  # leher
+    kepala = condong(Vector((0, 0.012, 1.0)))
+    g.bola(kepala, (0.1, 0.106, 0.112), rimbun=0)  # kepala besar
+    g.bola(kepala + Vector((0, -0.012, 0.018)), (0.107, 0.11, 0.102), rimbun=0)  # rambut
     rr = random.Random(SEED + 1)
-    for _ in range(14):  # ujung rambut bergumpal kecil di tepi siluet
+    for _ in range(16):  # ujung rambut bergumpal kecil di tepi siluet
         a = rr.uniform(-0.2, 3.34)
-        g.bola((0.096 * math.cos(a), -0.01 - 0.05 * rr.random(), 1.02 + 0.07 * math.sin(a)),
+        g.bola(kepala + Vector((0.106 * math.cos(a), -0.02 - 0.05 * rr.random(), 0.018 + 0.08 * math.sin(a))),
                (0.022, 0.022, 0.02), rimbun=0)
-    for x in (-1, 1):  # lengan: bahu, siku, tangan di tepi piring
-        bahu = Vector((x * 0.12, 0.0, 0.81))
-        siku = Vector((x * 0.15, 0.06, 0.66))
-        tangan = Vector((x * 0.13, 0.2, TINGGI_KUE + 0.005))
-        g.bola(bahu, (0.042, 0.042, 0.042), rimbun=0)
-        g.tabung(bahu, siku, 0.036, n=12)
-        g.bola(siku, (0.034, 0.034, 0.034), rimbun=0)
-        g.tabung(siku, tangan, 0.03, n=12)
-        g.bola(tangan, (0.03, 0.035, 0.022), rimbun=0)
+    for x in (-1, 1):  # lengan baju longgar: bahu, siku menjauh dari badan, tangan di bawah piring
+        bahu = condong(Vector((x * 0.125, 0.0, 0.8)))
+        siku = Vector((x * 0.175, bahu.y + 0.07, 0.65))
+        tangan = Vector((x * 0.125, POSISI_KUE.y + 0.01, POSISI_KUE.z - 0.012))
+        _loft(g, [(bahu, 0.05, 0.05, 0.0), (siku, 0.047, 0.047, 0.0),
+                  (siku.lerp(tangan, 0.85), 0.045, 0.045, 0.003)])
+        g.bola(tangan, (0.03, 0.04, 0.022), rimbun=0)
     k.selesai()
     for o in k.kol.objects:
         o.parent = akar
@@ -83,7 +124,7 @@ def buat_anak(kol, lokasi, arah_derajat):
 
     # Kue di atas piring, tiga lilin
     kue = Kanvas("Anak_Kue", kol)
-    pusat = Vector((0, 0.22, TINGGI_KUE))
+    pusat = POSISI_KUE.copy()
     kue["kue_piring"].tabung(pusat, pusat + Vector((0, 0, 0.01)), 0.14, n=28)
     kue["kue_coklat"].tabung(pusat + Vector((0, 0, 0.01)), pusat + Vector((0, 0, 0.05)), 0.105, n=28)
     kue["kue_krim"].tabung(pusat + Vector((0, 0, 0.05)), pusat + Vector((0, 0, 0.085)), 0.108, n=28)

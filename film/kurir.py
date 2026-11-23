@@ -200,42 +200,65 @@ def _bahan():
 
 
 def _bahan_ponco():
-    """Plastik PVC kuning yang basah: lapisan coat licin, butir air, aliran air."""
-    b = bahan.polos("ponco_kuning", (0.95, 0.6, 0.02), kasar=0.25)
+    """Plastik PVC kuning yang basah.
+
+    Lapisan coat sangat licin (basah mengilap); tetes air berupa kubah kecil
+    terpisah (3-7 mm, sel Voronoi yang sebagian kosong) yang lebih licin dari
+    plastiknya; jalur air mengalir memanjang ke bawah.
+    """
+    b = bahan.polos("ponco_kuning", (0.95, 0.6, 0.02), kasar=0.2)
     nt = b.node_tree
     bsdf = nt.nodes["Principled BSDF"]
     bsdf.inputs["Coat Weight"].default_value = 1.0
-    bsdf.inputs["Coat Roughness"].default_value = 0.03
-    koor = nt.nodes.new("ShaderNodeTexCoord")
-    butir = nt.nodes.new("ShaderNodeTexVoronoi")
-    butir.feature = "SMOOTH_F1"
-    butir.inputs["Scale"].default_value = 90.0
-    nt.links.new(koor.outputs["Object"], butir.inputs["Vector"])
-    rentang = nt.nodes.new("ShaderNodeMapRange")
-    rentang.inputs["From Min"].default_value = 0.0
-    rentang.inputs["From Max"].default_value = 0.35
-    rentang.inputs["To Min"].default_value = 1.0
-    rentang.inputs["To Max"].default_value = 0.0
-    nt.links.new(butir.outputs["Distance"], rentang.inputs["Value"])
-    aliran = nt.nodes.new("ShaderNodeTexNoise")
-    peta = nt.nodes.new("ShaderNodeMapping")
-    peta.inputs["Scale"].default_value = (30.0, 30.0, 3.0)  # memanjang ke bawah
-    nt.links.new(koor.outputs["Object"], peta.inputs["Vector"])
-    nt.links.new(peta.outputs["Vector"], aliran.inputs["Vector"])
-    tambah = nt.nodes.new("ShaderNodeMath")
-    tambah.operation = "ADD"
-    nt.links.new(rentang.outputs["Result"], tambah.inputs[0])
-    kali = nt.nodes.new("ShaderNodeMath")
-    kali.operation = "MULTIPLY"
-    kali.inputs[1].default_value = 0.3
-    nt.links.new(aliran.outputs["Fac"], kali.inputs[0])
-    nt.links.new(kali.outputs[0], tambah.inputs[1])
-    bump = nt.nodes.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.35
-    bump.inputs["Distance"].default_value = 0.002
-    nt.links.new(tambah.outputs[0], bump.inputs["Height"])
-    nt.links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
-    nt.links.new(bump.outputs["Normal"], bsdf.inputs["Coat Normal"])
+    bsdf.inputs["Coat Roughness"].default_value = 0.02
+    n, s = nt.nodes.new, nt.links.new
+
+    def math_(op, a, b=None):
+        m = n("ShaderNodeMath")
+        m.operation = op
+        for k, x in enumerate((a, b)):
+            if x is None:
+                continue
+            if isinstance(x, (int, float)):
+                m.inputs[k].default_value = x
+            else:
+                s(x, m.inputs[k])
+        return m.outputs[0]
+
+    koor = n("ShaderNodeTexCoord")
+    sel = n("ShaderNodeTexVoronoi")
+    sel.inputs["Scale"].default_value = 70.0  # sel 1,4 cm
+    s(koor.outputs["Object"], sel.inputs["Vector"])
+    acak = n("ShaderNodeSeparateColor")
+    s(sel.outputs["Color"], acak.inputs[0])
+    jari = math_("ADD", 0.1, math_("MULTIPLY", acak.outputs[0], 0.16))  # jari-jari tetes per sel
+    ada = math_("GREATER_THAN", acak.outputs[1], 0.4)  # 60% sel berisi tetes
+    kubah = math_("MAXIMUM", math_("SUBTRACT", 1.0, math_("DIVIDE", sel.outputs["Distance"], jari)), 0.0)
+    tetes = math_("MULTIPLY", math_("SQRT", kubah), ada)
+
+    peta = n("ShaderNodeMapping")
+    peta.inputs["Scale"].default_value = (40.0, 40.0, 2.5)  # memanjang ke bawah
+    s(koor.outputs["Object"], peta.inputs["Vector"])
+    aliran = n("ShaderNodeTexNoise")
+    aliran.inputs["Detail"].default_value = 3.0
+    s(peta.outputs["Vector"], aliran.inputs["Vector"])
+    jalur = n("ShaderNodeMapRange")  # hanya jalur air yang tegas, bukan seluruh permukaan
+    jalur.inputs["From Min"].default_value = 0.55
+    jalur.inputs["From Max"].default_value = 0.7
+    s(aliran.outputs["Fac"], jalur.inputs["Value"])
+
+    tinggi = math_("ADD", tetes, math_("MULTIPLY", jalur.outputs["Result"], 0.35))
+    bump = n("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.6
+    bump.inputs["Distance"].default_value = 0.0015
+    s(tinggi, bump.inputs["Height"])
+    s(bump.outputs["Normal"], bsdf.inputs["Normal"])
+    s(bump.outputs["Normal"], bsdf.inputs["Coat Normal"])
+    kasar = n("ShaderNodeMapRange")  # tetes dan jalur air lebih licin
+    kasar.inputs["To Min"].default_value = 0.2
+    kasar.inputs["To Max"].default_value = 0.04
+    s(math_("MINIMUM", tinggi, 1.0), kasar.inputs["Value"])
+    s(kasar.outputs["Result"], bsdf.inputs["Roughness"])
 
 
 # --------------------------------------------------------------------------
@@ -327,14 +350,16 @@ def _tubuh(kol, arm):
     m.lonjong((0, 0, 0.88), (0, 0, 1.04), 0.17, 0.12, "pinggul", "kurir_celana")
     m.lonjong((0, 0, 1.04), (0, 0, 1.27), 0.155, 0.105, "punggung", "kurir_baju")
     m.lonjong((0, 0, 1.25), (0, 0, 1.44), 0.19, 0.12, "dada", "kurir_baju")
-    m.lonjong((0, 0, 1.43), (0, 0.01, 1.57), 0.055, 0.055, "leher", "kurir_baju", lebih=0.02)
+    m.lonjong((0, 0, 1.4), (0, 0.0, 1.47), 0.075, 0.07, "dada", "kurir_baju", lebih=0.02)  # kerah kaus
+    m.lonjong((0, -0.005, 1.44), (0, 0.01, 1.6), 0.052, 0.05, "leher", "kurir_kulit", lebih=0.02)
     m.lonjong((0, 0.012, 1.56), (0, 0.012, 1.79), 0.085, 0.1, "kepala", "kurir_kulit", lebih=0.0)
     m.lonjong((0, 0.0, 1.58), (0, 0.0, 1.8), 0.09, 0.105, "kepala", "kurir_rambut", lebih=0.005, potong=-0.15)
     for x in (-1, 1):  # telinga (terlihat dari belakang saat helm dilepas)
         m.lonjong((x * 0.086, -0.005, 1.65), (x * 0.092, -0.01, 1.7), 0.012, 0.022, "kepala", "kurir_kulit",
                   lebih=0.004, n=10, m=6)
     for s, x in (("L", -1), ("R", 1)):
-        m.lonjong((x * 0.04, 0, 1.42), (x * 0.18, 0, 1.42), 0.06, 0.06, f"bahu.{s}", "kurir_baju", lebih=0.04)
+        # Bahu sedikit lebih rendah dari lereng bahu ponco supaya tidak menembus
+        m.lonjong((x * 0.04, 0, 1.405), (x * 0.17, 0, 1.405), 0.05, 0.055, f"bahu.{s}", "kurir_baju", lebih=0.04)
         m.lonjong((x * 0.18, 0, 1.42), (x * 0.2, 0, 1.13), 0.055, 0.055, f"lengan_atas.{s}", "kurir_baju")
         m.lonjong((x * 0.2, 0, 1.13), (x * 0.21, 0.03, 0.88), 0.045, 0.045, f"lengan_bawah.{s}", "kurir_baju")
         m.lonjong((x * 0.21, 0.03, 0.9), (x * 0.21, 0.05, 0.79), 0.032, 0.05, f"tangan.{s}",
@@ -420,8 +445,11 @@ def _ponco(kol, arm, nama="Kurir_Ponco"):
     """
     # (z, setengah lebar X, setengah tebal Y). Bahu: puncak bahu z 1,48, lengan
     # menggantung di x 0,18-0,26, jadi ponco di x 0,31-0,34 menutupi lengan atas.
-    atas = [(1.56, 0.07, 0.065), (1.53, 0.1, 0.09), (1.5, 0.2, 0.13), (1.47, 0.27, 0.17),
-            (1.43, 0.31, 0.19), (1.37, 0.33, 0.2)]
+    # Kerah rendah di pangkal leher (leher terlihat saat helm dilepas), bahu
+    # menurun mengikuti bahu (sekitar 25 derajat), lalu jatuh melebar ke lutut.
+    atas = [(1.52, 0.07, 0.065), (1.51, 0.1, 0.09), (1.495, 0.13, 0.115), (1.475, 0.165, 0.14),
+            (1.45, 0.2, 0.16), (1.42, 0.235, 0.175), (1.385, 0.26, 0.185), (1.34, 0.278, 0.19),
+            (1.29, 0.29, 0.195)]
     n = 56
     baris = 24
     titik, z_ujung = [], []
@@ -430,57 +458,67 @@ def _ponco(kol, arm, nama="Kurir_Ponco"):
             s = 2 * math.pi * i / n  # s = 0 di depan (+Y)
             titik.append(Vector((rx * math.sin(s), ry * math.cos(s) + 0.01, z)))
             z_ujung.append(None)
-    # Bahu membulat: di baris bahu, sisi kiri-kanan menggembung mengikuti bahu
-    for j in range(2, len(atas)):
+    def _kerut_bahu(s, kuat):
+        """Kerut sempit di sisi bahu (tempat kain menggantung dari ujung bahu)."""
+        return 0.01 * kuat * abs(math.sin(s)) ** 3 * math.sin(13 * s + 1.1)
+
+    # Kerut mulai di lereng bahu, makin jelas ke ujung bahu
+    for j in range(3, len(atas)):
+        kuat = (j - 2) / (len(atas) - 3)
+        z, rx, ry = atas[j]
         for i in range(n):
             s = 2 * math.pi * i / n
-            p = titik[j * n + i]
-            p.x *= 1 + 0.07 * math.sin(s) ** 2
-            p.z += 0.012 * math.sin(s) ** 2 * (1 if j < 4 else 0)
-    # Lipatan kain yang jatuh ke bawah: tonjolan vertikal, makin dalam ke bawah
+            arah = Vector((math.sin(s) / rx, math.cos(s) / ry, 0)).normalized()
+            titik[j * n + i] += arah * _kerut_bahu(s, kuat)
+
+    # Lipatan tegak yang lembut: mulai dangkal di bawah bahu, makin dalam ke
+    # bawah; tepi bawah tidak rata (kain plastik yang menggantung tidak sama panjang).
     import random as _r
     rl = _r.Random(5150)
-    fase = [rl.uniform(0, 6.28) for _ in range(3)]
+    fase = [rl.uniform(0, 6.28) for _ in range(5)]
+    z0 = atas[-1][0]
     for j in range(1, baris + 1):
         t = j / baris
         for i in range(n):
             s = 2 * math.pi * i / n
-            ujung = 0.5 - 0.04 * math.cos(s)  # sampai lutut; depan sedikit lebih panjang
-            z = 1.37 - (1.37 - ujung) * t
-            rx, ry = 0.33 + 0.04 * t, 0.2 + 0.05 * t
-            lipat = (0.024 * t ** 0.8) * (0.55 * math.sin(9 * s + fase[0]) + 0.3 * math.sin(14 * s + fase[1])
-                                         + 0.15 * math.sin(5 * s + fase[2]))
+            ujung = (0.5 - 0.04 * math.cos(s)  # sampai lutut; depan sedikit lebih panjang
+                     + 0.03 * math.sin(3 * s + fase[3]) + 0.015 * math.sin(8 * s + fase[4]))
+            z = z0 - (z0 - ujung) * t
+            rx, ry = 0.29 + 0.07 * t, 0.195 + 0.055 * t  # melebar ke bawah (A)
+            lipat = (0.03 * t ** 0.6) * (0.5 * math.sin(7 * s + fase[0]) + 0.3 * math.sin(11 * s + fase[1])
+                                        + 0.2 * math.sin(4 * s + fase[2]))
+            lipat += _kerut_bahu(s, 1.0) * math.exp(-t / 0.2)  # kerut yang jatuh dari ujung bahu
             arah = Vector((math.sin(s) / rx, math.cos(s) / ry, 0)).normalized()
             titik.append(Vector((rx * math.sin(s), ry * math.cos(s) + 0.01 + 0.03 * t, z)) + arah * lipat)
             z_ujung.append(ujung)
     muka = [(j * n + i, j * n + (i + 1) % n, (j + 1) * n + (i + 1) % n, (j + 1) * n + i)
             for j in range(len(atas) + baris - 1) for i in range(n)]
-    # Tudung terlipat di punggung: kantong setengah kubah dengan bibir tergulung di atasnya
-    pusat_t, rxt, ryt, rzt = Vector((0, -0.19, 1.37)), 0.15, 0.065, 0.12
+    # Tudung terlipat di punggung: kantong pipih yang rebah mengikuti punggung,
+    # lebar di atas (kerah) dan menyempit ke bawah, sedikit menggembung di tengah.
+    def _profil(z):
+        for (za, xa, ya), (zb, xb, yb) in zip(atas, atas[1:]):
+            if zb <= z <= za:
+                u = (za - z) / (za - zb)
+                return xa + (xb - xa) * u, ya + (yb - ya) * u
+        return atas[-1][1], atas[-1][2]
+
     o = len(titik)
-    nu, nv = 14, 8
+    nu, nv = 12, 8
     for jv in range(nv + 1):
-        el = -math.pi / 2 + math.pi * jv / nv
+        v = jv / nv
+        z = 1.505 - 0.21 * v
+        rx_z, ry_z = _profil(z)
+        w = 0.15 * (1 - 0.45 * v)
         for iu in range(nu + 1):
-            az = math.pi * iu / nu  # setengah ke luar (ke belakang, -Y)
-            kerut = 1 + 0.06 * math.sin(5 * az + 0.7) * math.cos(el)  # sedikit berkerut
-            titik.append(pusat_t + Vector((-rxt * math.cos(el) * math.cos(az),
-                                           -ryt * kerut * math.cos(el) * math.sin(az), rzt * math.sin(el))))
+            u = -1 + 2 * iu / nu
+            x = u * w
+            punggung = ry_z * math.sqrt(max(0.0, 1 - (x / rx_z) ** 2)) - 0.01
+            gembung = 0.03 * (1 - u * u) * math.sin(math.pi * min(1.0, 0.15 + 0.85 * v))
+            titik.append(Vector((x, -(punggung + 0.006 + gembung), z)))
             z_ujung.append(None)
     lebar_t = nu + 1
-    muka += [(o + jv * lebar_t + iu, o + jv * lebar_t + iu + 1, o + (jv + 1) * lebar_t + iu + 1,
-              o + (jv + 1) * lebar_t + iu) for jv in range(nv) for iu in range(nu)]
-    o = len(titik)  # bibir tudung yang tergulung: tabung kecil melengkung di tepi atas
-    lingkar, ruas = 8, 16
-    for k in range(ruas + 1):
-        a = math.pi * k / ruas
-        c = pusat_t + Vector((-rxt * 1.02 * math.cos(a), -0.012 - 0.02 * math.sin(a), rzt * 0.92 + 0.012 * math.sin(a)))
-        for q in range(lingkar):
-            b = 2 * math.pi * q / lingkar
-            titik.append(c + Vector((0, 0.014 * math.cos(b), 0.014 * math.sin(b))))
-            z_ujung.append(None)
-    muka += [(o + k * lingkar + q, o + k * lingkar + (q + 1) % lingkar, o + (k + 1) * lingkar + (q + 1) % lingkar,
-              o + (k + 1) * lingkar + q) for k in range(ruas) for q in range(lingkar)]
+    muka += [(o + jv * lebar_t + iu, o + (jv + 1) * lebar_t + iu, o + (jv + 1) * lebar_t + iu + 1,
+              o + jv * lebar_t + iu + 1) for jv in range(nv) for iu in range(nu)]
     mesh = bpy.data.meshes.new(nama)
     mesh.from_pydata([tuple(p) for p in titik], [], muka)
     mesh.materials.append(bpy.data.materials["ponco_kuning"])
@@ -503,11 +541,15 @@ def _ponco(kol, arm, nama="Kurir_Ponco"):
         bobot = [(1 / max(d, 0.03) ** 2, nama_t) for d, nama_t in jarak[:4]]  # halus: kuadrat, 4 tulang
         total = sum(w for w, _ in bobot)
         bahu = (min(1.0, max(0.0, (abs(p.x) - 0.14) / 0.14)) * min(1.0, max(0.0, (p.z - 1.12) / 0.18)))
-        bahu = bahu * bahu * (3 - 2 * bahu)
+        bahu = 0.5 * bahu * bahu * (3 - 2 * bahu)  # setengah ikut lengan: bahu tidak menggelembung
+        isi = {}
         for w, nama_t in bobot:
-            grup[nama_t].add([idx], (1 - bahu) * w / total, "REPLACE")
+            isi[nama_t] = isi.get(nama_t, 0.0) + (1 - bahu) * w / total
         if bahu > 0:
-            grup["lengan_atas.L" if p.x < 0 else "lengan_atas.R"].add([idx], bahu, "REPLACE")
+            sisi = "lengan_atas.L" if p.x < 0 else "lengan_atas.R"
+            isi[sisi] = isi.get(sisi, 0.0) + bahu
+        for nama_t, w in isi.items():
+            grup[nama_t].add([idx], w, "REPLACE")
         w_pin = 1.0
         if z_ujung[idx] is not None:
             u = min(1.0, max(0.0, (p.z - z_ujung[idx]) / TEPI_BEBAS))
@@ -735,7 +777,8 @@ POSE["ketuk_tarik"] = {**POSE["ketuk"], "ik": {**POSE["ketuk"]["ik"], "ik_tangan
 
 # Tangan kiri sedikit menjauh dari badan: helm yang tergantung di pergelangan
 # kiri berada di luar sisi ponco dan terlihat dari belakang.
-_HELM_KIRI = {"ik_tangan.L": (-0.4, 0.04, 0.96), "siku.L": (-0.8, -0.3, 1.2)}
+# Tangan kiri rapat ke badan (di dalam ponco), helm tergantung di bawah tepi ponco
+_HELM_KIRI = {"ik_tangan.L": (-0.27, 0.06, 0.94), "siku.L": (-0.45, -0.45, 1.2)}
 POSE["teras_paket"] = {**POSE["berdiri_paket"], "helm": 1.0,
                        "ik": {**POSE["berdiri_paket"]["ik"], **_HELM_KIRI}, "ik_rot": {}}
 for _n in ("ketuk", "ketuk_tarik"):
@@ -753,8 +796,8 @@ def _bahan_rambut():
     nt.nodes.clear()
     h = nt.nodes.new("ShaderNodeBsdfHairPrincipled")
     h.parametrization = "MELANIN"
-    for soket, nilai in (("Melanin", 0.97), ("Melanin Redness", 0.15), ("Roughness", 0.16),
-                         ("Radial Roughness", 0.25), ("Coat", 0.35)):  # hitam, basah dan licin
+    for soket, nilai in (("Melanin", 0.97), ("Melanin Redness", 0.15), ("Roughness", 0.1),
+                         ("Radial Roughness", 0.2), ("Coat", 0.6)):  # hitam, basah dan licin
         if soket in h.inputs:
             h.inputs[soket].default_value = nilai
     out = nt.nodes.new("ShaderNodeOutputMaterial")
@@ -783,7 +826,7 @@ def _rambut(kol, arm):
         nrm = Vector((u.x / ax, u.y / ay, u.z / az)).normalized()
         alir = Vector((0, -0.35, -1.0))
         alir = (alir - nrm * alir.dot(nrm)).normalized()  # menyusur kulit kepala, ke belakang-bawah
-        pj = rng.uniform(0.022, 0.036)
+        pj = rng.uniform(0.022, 0.036) * (1.3 if u.y < -0.3 and u.z < 0.3 else 1.0)  # tengkuk: sedikit lebih panjang
         ujung_g = p + (alir * 0.85 + nrm * 0.18) * pj
         for _ in range(5):  # 5 helai per gumpalan basah
             geser = Vector((rng.uniform(-1, 1), rng.uniform(-1, 1), rng.uniform(-1, 1))) * 0.003

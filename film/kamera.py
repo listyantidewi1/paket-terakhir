@@ -72,20 +72,21 @@ def _shot1(s):
     _fokus(cam, "Motor", 2.8)
 
 
-# Shot 2b: kamera diam dan rendah di seberang kali (bibir beton timur), menatap
-# titik motor mengerem; lensa 35 mm
-# Di garis hadap motor saat mengerem (arah -38 derajat): motor datang menuju kamera,
-# lampu depan menyorot air ke arah kamera; saat belok kiri motor hilang di balik
-# tembok utara simpang. Relatif terhadap (KALI_X, 28.3, 0).
-SHOT2B_LOK = Vector((9.9, 14.6, 0.85))
-SHOT2B_SASARAN = Vector((-1.6, 0.0, 0.75))
+# Shot 2b: kamera diam dan rendah di tepi seberang kali, 11,6 m dari titik motor
+# mengerem, 0,55 m di atas jalan (0,9 m di atas air); lensa 40 mm.
+# Air kali mengisi sepertiga bawah gambar, bibir beton tanpa pagar melintang di
+# bawah motor, dan lampu depan motor (arah -38 derajat, 26 derajat dari garis
+# ke kamera) terpantul di air. Relatif terhadap (KALI_X, 28.3, 0).
+SHOT2B_LOK = Vector((9.0, 4.7, 0.55))
+SHOT2B_SASARAN = Vector((-1.6, 0.0, 0.7))
+SHOT2B_LENSA = 40
 
 
 def _shot2(s):
     """Shot 2 dalam dua kamera:
     a) 7-10 dtk: close-up layar HP (lensa 50 mm, f/2), mengikuti HP di setang;
        jalan di belakangnya kabur.
-    b) 10-20 dtk: kamera diam dan rendah di seberang kali, lensa 35 mm."""
+    b) 10-20 dtk: kamera diam dan rendah di seberang kali, lensa 40 mm."""
     cam = _kamera(2)
     layar = bpy.data.objects["HP_Layar"]
     scene = bpy.context.scene
@@ -105,7 +106,7 @@ def _shot2(s):
     cam2 = bpy.data.objects.new("S02b_Kamera", data)
     cam.users_collection[0].objects.link(cam2)
     dasar = Vector((kota.KALI_X, 28.3, 0.0))
-    _kunci(cam2, adegan.POTONG_KALI, dasar + SHOT2B_LOK, dasar + SHOT2B_SASARAN, 35)
+    _kunci(cam2, adegan.POTONG_KALI, dasar + SHOT2B_LOK, dasar + SHOT2B_SASARAN, SHOT2B_LENSA)
     _fokus(cam2, "Motor", 2.8)
     penanda = scene.timeline_markers.new("S02b", frame=adegan.POTONG_KALI)
     penanda.camera = cam2

@@ -77,7 +77,12 @@ def _cahaya_bulan(kota):
 
 def _tanah(kota):
     k = Kanvas("Tanah", kota)
-    k["tanah"].kotak((-450, -200, -0.3), (450, 250, -0.05))
+    # Berlubang di atas kali (shot 2) supaya air kali yang lebih rendah terlihat
+    x0, x1, y0, y1 = KALI_X + 0.7, KALI_X + 9.3, -45.0, 80.0
+    k["tanah"].kotak((-450, -200, -0.3), (x0, 250, -0.05))
+    k["tanah"].kotak((x1, -200, -0.3), (450, 250, -0.05))
+    k["tanah"].kotak((x0, -200, -0.3), (x1, y0, -0.05))
+    k["tanah"].kotak((x0, y1, -0.3), (x1, 250, -0.05))
     k.selesai()
 
 
@@ -665,7 +670,7 @@ def _kali(rng, kota):
     tepi = X + 0.7
     k["beton_kali"].kotak((X, Y0, -3.2), (tepi, Y1, 0.05))
     k["beton_kali"].kotak((tepi, Y0, -3.4), (X + 9.3, Y1, -3.2))  # dasar kali
-    air = -0.8  # kali deras dan tinggi karena hujan
+    air = -0.35  # kali deras, hampir sebibir jalan karena hujan
     k["air_kali"].poly([(tepi, Y0, air), (X + 9.3, Y0, air), (X + 9.3, Y1, air), (tepi, Y1, air)],
                        [(0, 1, 2, 3)])
     k["beton_kali"].kotak((X + 9.3, Y0, -3.4), (X + 9.7, Y1, 0.4))
