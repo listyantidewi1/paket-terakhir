@@ -227,3 +227,147 @@ def periksa_wajah(langkah=2):
         if muka.normalized().dot(ke_kamera) > 0.2:
             masalah.append(f)
     return masalah
+
+
+# --------------------------------------------------------------------------
+# Versi tegak (1080x1920, YouTube Short)
+#
+# Tiap kamera lebar diduplikasi dengan aksi animasi yang sama (gerak sama),
+# lalu diarahkan (Track To) ke benda penting shot itu, dan lensanya dibuat
+# cukup lebar supaya benda itu utuh di bingkai tegak. Hanya dipakai bila
+# bangun.py dijalankan dengan --tegak.
+
+def _titik_motor(m):
+    mw = m.matrix_world
+    return [mw @ Vector((x, y, z)) for x in (-0.34, 0.34) for y in (-1.0, 0.91) for z in (0.0, 1.34)]
+
+
+def _titik_objek(nama_awal):
+    hasil = []
+    for o in bpy.data.objects:
+        if o.name.startswith(nama_awal) and o.type in ("MESH", "FONT", "CURVES"):
+            hasil += [o.matrix_world @ Vector(c) for c in o.bound_box]
+    return hasil
+
+
+def _titik_tulang(arm, tulang=None, lebih=0.0):
+    mw = arm.matrix_world
+    hasil = []
+    for b in arm.pose.bones:
+        if tulang is None or b.name in tulang:
+            for p in (b.head, b.tail):
+                q = mw @ p
+                hasil += [q + Vector((dx, dy, dz)) for dx in (-lebih, lebih) for dy in (-lebih, lebih)
+                          for dz in (-lebih, lebih)] if lebih else [q]
+    return hasil
+
+
+def _subjek():
+    """nomor kamera -> (fungsi titik benda penting, (objek induk sasaran, offset lokal))."""
+    m = bpy.data.objects["Motor"]
+    kc = bpy.data.objects["Kucing"]
+    arm = bpy.data.objects["Kurir"]
+    layar = bpy.data.objects["HP_Layar"]
+    pk = bpy.data.objects["Paket"]
+    anak = bpy.data.objects["Anak"]
+    motor = (lambda: _titik_motor(m), (m, Vector((0, 0, 0.7))))
+    return {
+        "S01_Kamera": motor,
+        "S02_Kamera": (lambda: [layar.matrix_world @ Vector((x, y, 0)) for x in (-0.037, 0.037) for y in (-0.079, 0.079)],
+                       (layar, Vector((0, 0, 0)))),
+        "S02b_Kamera": motor,
+        "S03_Kamera": (lambda: _titik_tulang(kc, lebih=0.06), (kc, Vector((0, 0, 0.2)))),
+        "S04_Kamera": motor,
+        "S05_Kamera": (lambda: _titik_objek("Paket_Label"), (pk, Vector((-0.05, -0.07, 0.165)))),
+        "S06_Kamera": (lambda: _titik_tulang(arm, lebih=0.12), (arm, Vector((0, 0, 0.95)))),
+        "S07_Kamera": (lambda: _titik_objek("Anak_Kue") + _titik_objek("Api_Lilin"), (anak, Vector((0, 0.22, 0.8)))),
+        "S08_Kamera": (lambda: _titik_motor(m) + _titik_objek("Pintu_Tujuan"), (None, None)),
+    }
+
+
+def _rentang_kamera(nama):
+    """Frame-frame saat kamera ini aktif (dari marker)."""
+    scene = bpy.context.scene
+    tanda = sorted(scene.timeline_markers, key=lambda t: t.frame)
+    for i, t in enumerate(tanda):
+        if t.camera and t.camera.name == nama:
+            akhir = tanda[i + 1].frame - 1 if i + 1 < len(tanda) else waktu.FRAME_AKHIR
+            return t.frame, akhir
+    return None
+
+
+def _hitung_lensa(cam, titik_fn, rentang, tepi=0.05):
+    """Lensa terbesar (paling sempit) yang membuat semua titik benda masuk bingkai."""
+    from bpy_extras.object_utils import world_to_camera_view as proyeksi
+    scene = bpy.context.scene
+    faktor = 1.0
+    for f in range(rentang[0], rentang[1] + 1, max(1, (rentang[1] - rentang[0]) // 12)):
+        scene.frame_set(f)
+        for p in titik_fn():
+            q = proyeksi(scene, cam, p)
+            if q.z <= 0:
+                continue
+            for c in (q.x, q.y):
+                d = abs(c - 0.5)
+                if d > 1e-6:
+                    faktor = min(faktor, (0.5 - tepi) / d)
+    return faktor
+
+
+# Kamera lebar yang sudah menatap tepat ke benda penting dengan kemiringan khusus
+# (atas gambar = atas layar HP / atas label): tanpa Track To, supaya tulisan tetap mendatar
+TANPA_JEJAK = {"S02_Kamera", "S05_Kamera"}
+
+
+def atur_tegak():
+    """Buat kamera tegak untuk tiap kamera lebar dan arahkan marker ke kamera tegak."""
+    scene = bpy.context.scene
+    subjek = _subjek()
+    for nama, (titik_fn, (induk, offset)) in subjek.items():
+        lebar = bpy.data.objects[nama]
+        rentang = _rentang_kamera(nama)
+        cam = lebar.copy()  # aksi animasi objek dipakai bersama: gerak sama persis
+        cam.data = lebar.data.copy()
+        cam.name = cam.data.name = nama.replace("_Kamera", "_Tegak")
+        lebar.users_collection[0].objects.link(cam)
+        lensa = lebar.data.lens
+        if cam.data.animation_data:
+            cam.data.animation_data_clear()  # lensa tegak tetap (dihitung di bawah)
+        # Sasaran: empty yang menempel pada benda penting
+        sasaran = bpy.data.objects.new(f"{cam.name}_Sasaran", None)
+        lebar.users_collection[0].objects.link(sasaran)
+        if induk is not None:
+            sasaran.parent = induk
+            sasaran.location = offset
+        else:  # shot 8: titik tengah pintu dan motor
+            scene.frame_set(rentang[0])
+            pts = titik_fn()
+            sasaran.location = sum(pts, Vector()) / len(pts)
+        if nama not in TANPA_JEJAK:
+            jejak = cam.constraints.new("TRACK_TO")
+            jejak.target = sasaran
+            jejak.track_axis = "TRACK_NEGATIVE_Z"
+            jejak.up_axis = "UP_Y"
+        cam.data.lens = lensa
+        faktor = _hitung_lensa(cam, titik_fn, rentang)
+        cam.data.lens = lensa * min(1.0, faktor)
+        cam["lensa_lebar"] = lensa
+        for t in scene.timeline_markers:
+            if t.camera == lebar:
+                t.camera = cam
+    scene.frame_set(1)
+
+
+def periksa_tegak(frame):
+    """(nama kamera, utuh?, rentang x, rentang y) benda penting pada frame tertentu."""
+    from bpy_extras.object_utils import world_to_camera_view as proyeksi
+    scene = bpy.context.scene
+    scene.frame_set(frame)
+    cam = scene.camera
+    nama_lebar = cam.name.replace("_Tegak", "_Kamera")
+    titik_fn = _subjek()[nama_lebar][0]
+    qs = [proyeksi(scene, cam, p) for p in titik_fn()]
+    qs = [q for q in qs if q.z > 0]
+    xs, ys = [q.x for q in qs], [q.y for q in qs]
+    utuh = bool(qs) and min(xs) >= 0 and max(xs) <= 1 and min(ys) >= 0 and max(ys) <= 1
+    return cam.name, utuh, (min(xs), max(xs)), (min(ys), max(ys))

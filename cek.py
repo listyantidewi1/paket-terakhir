@@ -29,8 +29,9 @@ if AKAR not in sys.path:
 
 from film import waktu  # noqa: E402
 
-BERKAS = os.path.join(AKAR, "film.blend")
-FOLDER = os.path.join(AKAR, "cek")
+TEGAK = "--tegak" in (sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else [])
+BERKAS = os.path.join(AKAR, "film_tegak.blend" if TEGAK else "film.blend")
+FOLDER = os.path.join(AKAR, "cek", "tegak") if TEGAK else os.path.join(AKAR, "cek")
 SISI_PENDEK = 480
 SAMPEL = 8
 KOLOM = 4
@@ -88,7 +89,7 @@ def _cache_semua(scene):
             yield o.name, ps.point_cache
 
 
-FOLDER_CACHE = os.path.join(AKAR, "blendcache_film")
+FOLDER_CACHE = os.path.join(AKAR, "blendcache_film_tegak" if TEGAK else "blendcache_film")
 
 
 def _ada_di_disk(pc):
@@ -241,7 +242,7 @@ def main():
 
     arg = argumen()
     dekat = [j for j in DEKAT if f"--{j}" in arg]
-    arg = [a for a in arg if a.lstrip("-") not in DEKAT]
+    arg = [a for a in arg if a.lstrip("-") not in DEKAT and a != "--tegak"]
     if "--shot" in arg:
         pilih = {int(a) for a in arg[arg.index("--shot") + 1:]}
         frames = [s.frame_tengah for s in waktu.SHOTS if s.nomor in pilih]
@@ -250,6 +251,12 @@ def main():
     scene = bpy.context.scene
     pastikan_panggang(scene)
     atur_render_kecil(scene)
+    if TEGAK and frames:
+        from film import kamera
+        for f in frames:
+            nama, utuh, rx, ry = kamera.periksa_tegak(f)
+            print(f"[cek] tegak frame {f} {nama}: benda penting {'UTUH' if utuh else 'TERPOTONG'} "
+                  f"(x {rx[0]:.2f}-{rx[1]:.2f}, y {ry[0]:.2f}-{ry[1]:.2f})")
     if frames and not (dekat and not arg):
         susun_lembar([render_frame(scene, f) for f in frames])
     for jenis in dekat:

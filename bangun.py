@@ -3,6 +3,7 @@
 Jalankan:
     blender --background --python bangun.py               # 1920x1080
     blender --background --python bangun.py -- --vertikal # 1080x1920
+    blender --background --python bangun.py -- --tegak    # versi tegak (YouTube Short): film_tegak.blend
 """
 
 import os
@@ -105,7 +106,11 @@ def atur_cache():
 
 
 def main():
-    vertikal = "--vertikal" in argumen()
+    global BERKAS
+    tegak = "--tegak" in argumen()
+    vertikal = "--vertikal" in argumen() or tegak
+    if tegak:
+        BERKAS = os.path.join(AKAR, "film_tegak.blend")
     random.seed(SEED)
     kosongkan()
     atur_scene(vertikal)
@@ -141,6 +146,8 @@ def main():
     kurir.hitung_laju(arm, m, waktu.FRAME_AWAL - kurir.MULAI_KAIN, waktu.FRAME_AKHIR)  # goyang tepi ponco
     shot.bangun_shot()
     kamera.atur()  # gerakan kamera, lensa, fokus kabur (lihat film/kamera.py)
+    if tegak:
+        kamera.atur_tegak()  # kamera kedua per shot untuk bingkai 9:16
     bpy.ops.wm.save_as_mainfile(filepath=BERKAS)
     atur_cache()  # cache disk hanya bisa diaktifkan setelah berkas tersimpan
     bpy.ops.wm.save_as_mainfile(filepath=BERKAS)
