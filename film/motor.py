@@ -37,6 +37,31 @@ PLAT = "XX 0000 XX"  # bukan nomor sungguhan
 LABEL = ("Penerima: Ayah", "Gg. Melati, Kota Senja")
 
 
+MIRING_LABEL = 6.0  # derajat
+
+
+def _kertas_basah():
+    """Kertas label yang basah: sedikit transparan-kusam, licin, bernoda air."""
+    b = bahan.polos("kertas_label", (0.86, 0.85, 0.8), kasar=0.22)
+    nt = b.node_tree
+    bsdf = nt.nodes["Principled BSDF"]
+    koor = nt.nodes.new("ShaderNodeTexCoord")
+    noda = nt.nodes.new("ShaderNodeTexNoise")
+    noda.inputs["Scale"].default_value = 45.0
+    noda.inputs["Detail"].default_value = 4.0
+    nt.links.new(koor.outputs["Object"], noda.inputs["Vector"])
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.elements[0].position = 0.45
+    ramp.color_ramp.elements[0].color = (0.86, 0.85, 0.8, 1)
+    ramp.color_ramp.elements[1].position = 0.65
+    ramp.color_ramp.elements[1].color = (0.66, 0.62, 0.55, 1)  # noda basah lebih gelap
+    nt.links.new(noda.outputs["Fac"], ramp.inputs["Fac"])
+    nt.links.new(ramp.outputs["Color"], bsdf.inputs["Base Color"])
+    bsdf.inputs["Coat Weight"].default_value = 0.6  # lapisan air tipis
+    bsdf.inputs["Coat Roughness"].default_value = 0.08
+    bahan.polos("tinta_label", (0.02, 0.025, 0.06), kasar=0.4)
+
+
 def _bahan():
     if "motor_cat_biru" in bpy.data.materials:
         return
@@ -62,7 +87,7 @@ def _bahan():
     bahan.polos("strip_pemantul", (0.85, 0.85, 0.8), kasar=0.12, logam=0.6, emisi=(1.0, 1.0, 0.95), kuat=0.25)
     bahan.polos("kardus", (0.36, 0.23, 0.12), kasar=0.85)
     bahan.polos("lakban", (0.55, 0.45, 0.3), kasar=0.3)
-    bahan.polos("kertas_label", (0.88, 0.88, 0.84), kasar=0.7)
+    _kertas_basah()
 
 
 # --------------------------------------------------------------------------
@@ -477,11 +502,22 @@ def _boks_dan_paket(kol, akar):
     gs = _gabungan("kardus", "lakban", "kertas_label")
     gs["kardus"].kotak(dasar + Vector((-0.15, -0.13, 0)), dasar + Vector((0.15, 0.13, 0.16)))
     gs["lakban"].kotak(dasar + Vector((-0.151, -0.025, 0.0)), dasar + Vector((0.151, 0.025, 0.1605)))
-    gs["kertas_label"].kotak(dasar + Vector((-0.12, -0.11, 0.1605)), dasar + Vector((0.02, -0.03, 0.1615)))
+    # Label kertas sedikit miring (ditempel asal-asalan), sedikit melengkung karena basah
+    miring = math.radians(MIRING_LABEL)
+    pusat_l = Vector((-0.05, -0.07))
+
+    def putar(x, y):
+        d = Vector((x, y)) - pusat_l
+        return pusat_l + Vector((d.x * math.cos(miring) - d.y * math.sin(miring),
+                                 d.x * math.sin(miring) + d.y * math.cos(miring)))
+    sudut = [putar(x, y) for x, y in ((-0.12, -0.11), (0.02, -0.11), (0.02, -0.03), (-0.12, -0.03))]
+    gs["kertas_label"].poly([dasar + Vector((p.x, p.y, 0.1608 + 0.0015 * (i % 2))) for i, p in enumerate(sudut)],
+                            [(0, 1, 2, 3)])
     _jadikan(gs, "Paket", pk, dasar, kol)
     for i, (isi, ukuran) in enumerate(zip(LABEL, (0.018, 0.011))):
-        _teks_datar(f"Paket_Label_{i}", isi, pk, (-0.05, -0.055 - 0.028 * i, 0.162), (0, 0, 0),
-                    ukuran, "motor_huruf_plat", kol)
+        p = putar(-0.05, -0.055 - 0.028 * i)
+        _teks_datar(f"Paket_Label_{i}", isi, pk, (p.x, p.y, 0.1625), (0, 0, miring),
+                    ukuran, "tinta_label", kol)
 
 
 # --------------------------------------------------------------------------

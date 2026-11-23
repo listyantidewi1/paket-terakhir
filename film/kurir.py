@@ -858,3 +858,16 @@ def hitung_laju(arm, motor, frame_awal, frame_akhir):
         arm["laju"] = laju
         arm.keyframe_insert('["laju"]', frame=f)
         lalu = p
+
+# Shot 5: memegang paket dengan dua tangan di depan dada, menunduk membaca label
+POSE["baca_label"] = {
+    "pinggul": (0, 0, 0.94), "fk": {"punggung": (-6, 0, 0), "leher": (-18, 0, 0), "kepala": (-15, 0, 0)},
+    "ik": {"ik_tangan.L": (-0.17, 0.36, 1.12), "ik_tangan.R": (0.17, 0.36, 1.12),
+           "ik_kaki.L": (-0.11, 0, 0.1), "ik_kaki.R": (0.11, 0, 0.1),
+           "siku.L": (-0.6, -0.2, 0.9), "siku.R": (0.6, -0.2, 0.9)},
+    "ik_rot": {"ik_tangan.L": (90, 0, -80), "ik_tangan.R": (90, 0, 80)},
+}
+
+# Shot 2: menoleh ke kali (kanan-depan, sedikit menunduk) dan ke layar HP (menunduk)
+POSE["lihat_kali"] = {**_DUDUK, "fk": {**_DUDUK["fk"], "leher": (6, -18, 0), "kepala": (-6, -20, 0)}}
+POSE["lihat_hp"] = {**_DUDUK, "fk": {**_DUDUK["fk"], "leher": (-12, 0, 0), "kepala": (-18, 0, 0)}}

@@ -127,6 +127,7 @@ def main():
     adegan.shot2(m, arm)
     adegan.shot3(m, arm, kc, kol_kurir)
     adegan.shot45(m, arm, kol_kurir)
+    adegan.shot5(m, arm)
     # Shot 6-7: teras rumah tujuan, pintu terbuka, siluet anak dengan kue
     kol_anak = bpy.data.collections.new("Anak")
     bpy.context.scene.collection.children.link(kol_anak)

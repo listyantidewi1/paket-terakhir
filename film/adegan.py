@@ -11,7 +11,7 @@ Shot 3 (frame 481-792), sesuai STORYBOARD.md:
 import math
 
 import bpy
-from mathutils import Vector
+from mathutils import Euler, Vector
 
 from . import dunia_kota as kota
 from . import anak, kucing, kurir, waktu
@@ -77,24 +77,41 @@ def _ke_dunia(m, p):
 
 
 def shot2(m, arm):
-    """Shot 2: jalan kecil tepi kali. Motor melaju, belok kanan ke arah kali,
-    mengerem mendadak di tepi beton, diam (GPS mengulang), lalu belok kiri dan
-    keluar frame sebelum frame pra-gulir shot 3.
+    """Shot 2, tiga potongan (detik 7-20):
+    7-10  close-up layar HP; motor melaju di jalan kecil (kurir tidak di gambar).
+    10-17 kamera di seberang kali: motor berbelok kanan menuju kali dan mengerem
+          tepat di bibir beton; helm menoleh ke kali, ke HP, lalu ke kali lagi.
+    17-20 kamera yang sama: motor berbelok kiri ke jalan cabang dan hilang di
+          balik tembok; kali tetap di gambar.
     """
     s2 = waktu.SHOTS[1]
     X = kota.KALI_X
     motor_jalan = __import__("film.motor", fromlist=["animasi_jalan"]).animasi_jalan
     motor_jalan(m, [
-        (s2.frame_mulai, (X - 3.0, 8.0, 0.0), 0.0),
-        (215, (X - 3.0, 24.0, 0.0), 0.0, "linear"),          # 20 km/jam
-        (MOTOR_REM, (X - 1.6, 28.3, 0.0), -38.0, "keluar"),  # belok kanan, mengerem sampai berhenti
-        (340, (X - 1.6, 28.3, 0.0), -38.0, "linear"),        # diam: "Belok kanan." diulang
-        (400, (X - 12.0, 32.0, 0.0), 90.0, "masuk"),         # belok kiri, keluar frame
-        (408, (X - 16.0, 32.0, 0.0), 90.0, "linear"),
+        (s2.frame_mulai, (X - 3.0, -2.0, 0.0), 0.0),
+        (262, (X - 3.0, 24.0, 0.0), 0.0, "linear"),           # sekitar 25 km/jam
+        (MOTOR_REM, (X - 1.6, 28.3, 0.0), -38.0, "keluar"),    # belok kanan, mengerem di bibir beton
+        (BELOK_KIRI, (X - 1.6, 28.3, 0.0), -38.0, "linear"),   # diam: menoleh kali, HP, kali
+        (452, (X - 12.0, 32.0, 0.0), 90.0, "masuk"),           # belok kiri ke jalan cabang
+        (s2.frame_selesai, (X - 20.0, 32.0, 0.0), 90.0, "linear"),
     ], halus=False)
+    tp = kurir.terapkan_pose
+    for f, nama in ((s2.frame_mulai, "duduk_motor"), (MOTOR_REM, "duduk_motor"), (300, "lihat_kali"),
+                    (325, "lihat_kali"), (333, "lihat_hp"), (350, "lihat_hp"), (358, "lihat_kali"),
+                    (400, "lihat_kali"), (BELOK_KIRI, "duduk_motor")):
+        tp(arm, nama, frame=f)
+    # Potongan close-up HP: kurir tidak tampil (kamera berada di tempat dadanya)
+    for nama in ("Kurir_Tubuh", "Kurir_Helm", "Kurir_Rambut", "Kurir_Ponco"):
+        obj = bpy.data.objects[nama]
+        for f, sembunyi in ((s2.frame_mulai - 1, False), (s2.frame_mulai, True),
+                            (POTONG_KALI - 1, True), (POTONG_KALI, False)):
+            obj.hide_render = sembunyi
+            obj.keyframe_insert("hide_render", frame=f)
 
 
-MOTOR_REM = 245  # frame motor berhenti di tepi kali (kamera tersentak)
+POTONG_KALI = 241  # detik 10: dari close-up HP ke kamera di seberang kali
+BELOK_KIRI = 409  # detik 17: motor mulai berbelok kiri
+MOTOR_REM = 292  # frame motor berhenti di bibir beton
 
 
 def shot45(m, arm, kol_kurir):
@@ -123,6 +140,69 @@ def shot45(m, arm, kol_kurir):
     _konstan_jalur(tutup)
 
 
+TEMPAT_S5 = Vector((0.0, -1.5, 0.0))  # kurir di belakang boks motor, menghadap ke depan (+Y)
+# Paket dimiringkan ke kanan-atas (ke arah lampu teras dan kamera) supaya label terbaca;
+# arah muka label dalam koordinat motor
+ARAH_LABEL = Vector((0.9, 0.25, 0.9)).normalized()
+
+
+def shot5(m, arm):
+    """Shot 5: kurir memegang paket dengan dua tangan, label basah sedikit miring,
+    diterangi lampu teras rumah tujuan yang hangat."""
+    s5 = waktu.SHOTS[4]
+    scene = bpy.context.scene
+    kurir.kunci_tempat(arm, s5.frame_mulai - 1, (0, 0, 0), 0)
+    kurir.terapkan_pose(arm, "duduk_motor", frame=s5.frame_mulai - 1)  # tahan duduk sepanjang shot 4
+    for f in (s5.frame_mulai, s5.frame_selesai):
+        kurir.kunci_tempat(arm, f, TEMPAT_S5, 0)
+        kurir.terapkan_pose(arm, "baca_label", frame=f)
+    # Paket mengikuti kedua tangan, miring ke arah kurir
+    pk = bpy.data.objects["Paket"]
+    asal_lok, asal_rot = pk.location.copy(), pk.rotation_euler.copy()
+    pk.keyframe_insert("location", frame=s5.frame_mulai - 1)
+    pk.keyframe_insert("rotation_euler", frame=s5.frame_mulai - 1)
+    pb = arm.pose.bones
+    inv = None
+    rot = Vector((0, 0, 1)).rotation_difference(ARAH_LABEL).to_matrix()
+    for f in sorted(set(range(s5.frame_mulai, s5.frame_selesai + 1, 2)) | {s5.frame_selesai}):
+        scene.frame_set(f)
+        inv = m.matrix_world.inverted()
+        tangan = [arm.matrix_world @ ((pb[f"tangan.{s}"].head + pb[f"tangan.{s}"].tail) / 2) for s in "LR"]
+        pusat = (tangan[0] + tangan[1]) / 2 + Vector((0, 0, 0.02))
+        pk.location = inv @ pusat - rot @ Vector((0, 0, 0.08))
+        pk.rotation_euler = rot.to_euler()
+        pk.keyframe_insert("location", frame=f)
+        pk.keyframe_insert("rotation_euler", frame=f)
+    pk.location, pk.rotation_euler = asal_lok, asal_rot
+    for f in (s5.frame_selesai + 1,):
+        pk.keyframe_insert("location", frame=f)
+        pk.keyframe_insert("rotation_euler", frame=f)
+    # Lampu teras rumah tujuan: sorot hangat ke paket, hanya di shot 5 dan hanya
+    # menerangi paket dan kurir (shot lain tidak berubah)
+    teras = bpy.data.objects[f"Teras_No{kota.RUMAH_TUJUAN:02d}"]
+    data = bpy.data.lights.new("Lampu_Teras_Label", type="SPOT")
+    data.color = (1.0, 0.68, 0.38)
+    data.spot_size = math.radians(35)
+    data.spot_blend = 0.5
+    data.shadow_soft_size = 0.08
+    sorot = bpy.data.objects.new("Lampu_Teras_Label", data)
+    teras.users_collection[0].objects.link(sorot)
+    sorot.location = teras.matrix_world.translation
+    scene.frame_set(1056)
+    sasaran = m.matrix_world @ (TEMPAT_S5 + Vector((0, 0.36, 1.12)))
+    sorot.rotation_euler = (sasaran - sorot.location).to_track_quat("-Z", "Y").to_euler()
+    for f, daya in ((s5.frame_mulai - 1, 0.0), (s5.frame_mulai, 1400.0), (s5.frame_selesai, 1400.0),
+                    (s5.frame_selesai + 1, 0.0)):
+        data.energy = daya
+        data.keyframe_insert("energy", frame=f)
+    terima = bpy.data.collections.new("Diterangi_Lampu_Label")
+    for o in [pk] + list(pk.children_recursive) + [bpy.data.objects["Kurir_Tubuh"]]:
+        if o.type in ("MESH", "FONT"):
+            terima.objects.link(o)
+    sorot.light_linking.receiver_collection = terima
+    scene.frame_set(1)
+
+
 def _konstan_jalur(obj):
     _konstan(obj)
 
@@ -144,7 +224,7 @@ def shot8(arm):
 
 def shot3(m, arm, kc, kol_kurir):
     s3 = waktu.SHOTS[2]
-    pra = s3.frame_mulai - kurir.MULAI_KAIN
+    pra = s3.frame_mulai  # tanpa simulasi kain: motor dan kurir pindah tepat di awal shot 3
     scene = bpy.context.scene
     M = kota.TITIK["motor_lampu_merah"]
 
@@ -163,8 +243,7 @@ def shot3(m, arm, kc, kol_kurir):
     tp(arm, "duduk_motor", frame=s1.frame_selesai)
     tp(arm, "duduk_motor", frame=pra - 1)
     kurir.kunci_tempat(arm, pra - 1, (0, 0, 0), 0)
-    tp(arm, "duduk_tangan_turun", frame=pra)
-    tp(arm, "duduk_motor", frame=pra + 30)
+    tp(arm, "duduk_motor", frame=pra)
     tp(arm, "duduk_motor", frame=524)
     tp(arm, "menoleh", frame=538)  # menoleh ke belakang, melihat kucing di boks
     tp(arm, "menoleh", frame=GERAK_LAGI - 1)  # tahan sepanjang jeda
@@ -321,7 +400,7 @@ def shot67(m, arm, kol_kurir, kol_anak):
     """
     s6, s7 = waktu.SHOTS[5], waktu.SHOTS[6]
     scene = bpy.context.scene
-    pra = s6.frame_mulai - kurir.MULAI_KAIN
+    pra = s6.frame_mulai  # tanpa simulasi kain: kurir baru pindah ke teras di awal shot 6
     luar = kota.TITIK["pintu_keluar"]
 
     # Kurir: koordinat motor (kurir anak dari motor; motor diam di lampu merah)

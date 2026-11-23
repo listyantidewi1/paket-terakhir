@@ -72,27 +72,43 @@ def _shot1(s):
     _fokus(cam, "Motor", 2.8)
 
 
+# Shot 2b: kamera diam dan rendah di seberang kali (bibir beton timur), menatap
+# titik motor mengerem; lensa 35 mm
+# Di garis hadap motor saat mengerem (arah -38 derajat): motor datang menuju kamera,
+# lampu depan menyorot air ke arah kamera; saat belok kiri motor hilang di balik
+# tembok utara simpang. Relatif terhadap (KALI_X, 28.3, 0).
+SHOT2B_LOK = Vector((9.9, 14.6, 0.85))
+SHOT2B_SASARAN = Vector((-1.6, 0.0, 0.75))
+
+
 def _shot2(s):
-    """Lensa 35 mm dari belakang-atas bahu kanan kurir, layar HP tajam di depan.
-    Menempel pada motor; tersentak saat motor mengerem; lalu diam di tempat
-    (kali tetap di frame, motor keluar frame saat belok kiri)."""
+    """Shot 2 dalam dua kamera:
+    a) 7-10 dtk: close-up layar HP (lensa 50 mm, f/2), mengikuti HP di setang;
+       jalan di belakangnya kabur.
+    b) 10-20 dtk: kamera diam dan rendah di seberang kali, lensa 35 mm."""
     cam = _kamera(2)
-    m = bpy.data.objects["Motor"]
+    layar = bpy.data.objects["HP_Layar"]
     scene = bpy.context.scene
-    rem = adegan.MOTOR_REM
-    diam = rem + 12
-    for f in range(s.frame_mulai, diam + 1):
+    for f in range(s.frame_mulai, adegan.POTONG_KALI):
         scene.frame_set(f)
-        mw = m.matrix_world.copy()
-        sentak = 0.0
-        if f >= rem - 2:  # sentakan teredam: maju sedikit lalu kembali
-            u = f - (rem - 2)
-            sentak = 0.07 * math.exp(-u / 3.0) * math.cos(u * 0.9)
-        lok = mw @ Vector((0.24, -0.62 + sentak, 1.72 - sentak * 0.5))
-        sasaran = mw @ Vector((0.25, 3.0, 0.25 - sentak * 3.0))
-        _kunci(cam, f, lok, sasaran, 35 if f == s.frame_mulai else None)
-    _kunci(cam, s.frame_selesai, cam.location.copy(), cam.location + _arah_kamera(cam))
-    _fokus(cam, "HP_Layar", 2.8)
+        mw = layar.matrix_world
+        lok = mw @ Vector((0.0, -0.012, 0.28))
+        _kunci(cam, f, lok, mw.translation, 50 if f == s.frame_mulai else None,
+               atas=(mw.to_3x3() @ Vector((0, 1, 0))).normalized())
+    _fokus(cam, "HP_Layar", 2.0)
+
+    # Kamera kedua untuk potongan seberang kali, berganti lewat marker
+    data = bpy.data.cameras.new("S02b_Kamera")
+    data.sensor_fit = "AUTO"
+    data.clip_start = 0.05
+    data.clip_end = 500
+    cam2 = bpy.data.objects.new("S02b_Kamera", data)
+    cam.users_collection[0].objects.link(cam2)
+    dasar = Vector((kota.KALI_X, 28.3, 0.0))
+    _kunci(cam2, adegan.POTONG_KALI, dasar + SHOT2B_LOK, dasar + SHOT2B_SASARAN, 35)
+    _fokus(cam2, "Motor", 2.8)
+    penanda = scene.timeline_markers.new("S02b", frame=adegan.POTONG_KALI)
+    penanda.camera = cam2
 
 
 def _arah_kamera(cam):
@@ -134,17 +150,25 @@ def _shot4(s):
 
 
 def _shot5(s):
-    """Lensa 85 mm, maju pelan ke label paket sampai tulisannya memenuhi layar."""
+    """Lensa 85 mm, maju pelan ke label paket di tangan kurir sampai tulisannya
+    memenuhi layar. Dari atas bahu kanan kurir (arah tegak lurus label melewati
+    kepalanya); atas gambar mengikuti label supaya tulisan mendatar."""
     cam = _kamera(5)
     scene = bpy.context.scene
-    scene.frame_set(s.frame_mulai)
+    m = bpy.data.objects["Motor"]
+    pk = bpy.data.objects["Paket"]
     label = bpy.data.objects["Paket_Label_0"]
-    pusat = label.matrix_world @ Vector((0, -0.012, 0))  # tengah dua baris tulisan
-    arah = Vector((0, -0.42, 1.0)).normalized()  # dari belakang-atas boks
-    for f in range(s.frame_mulai, s.frame_selesai + 1, 6):
+    for f in sorted(set(range(s.frame_mulai, s.frame_selesai + 1, 6)) | {s.frame_selesai}):
+        scene.frame_set(f)
+        r = pk.matrix_world.to_3x3()
+        pusat = label.matrix_world @ Vector((0, -0.012, 0))  # tengah dua baris tulisan
+        normal = (r @ Vector((0, 0, 1))).normalized()
+        atas_label = (r @ Vector((0, 1, 0))).normalized()
+        kanan = m.matrix_world.to_3x3() @ Vector((1, 0, 0))
+        arah = normal  # tegak lurus label (paket sudah dihadapkan ke kamera)
         t = _ease((f - s.frame_mulai) / (s.frame_selesai - 40 - s.frame_mulai))
-        jarak = 1.15 + (0.34 - 1.15) * t
-        _kunci(cam, f, pusat + arah * jarak, pusat, 85 if f == s.frame_mulai else None)
+        jarak = 1.05 + (0.34 - 1.05) * t
+        _kunci(cam, f, pusat + arah * jarak, pusat, 85 if f == s.frame_mulai else None, atas=atas_label)
     _fokus(cam, "Paket_Label_0", 4.0)
 
 
