@@ -77,6 +77,13 @@ def shot1_motor(m, s1, kol):
     jalur = motor.animasi_jalan(m, [(f0, titik(f0), 0.0), (f1, titik(f1), 0.0)], halus=False,
                                 permukaan=dunia_kota.tinggi_permukaan)
     kejadian = cipratan.cari_kejadian(jalur, dunia_kota.GENANGAN, s1.frame_mulai, s1.frame_selesai)
+    # Peristiwa suara: motor lewat di samping kamera shot 1, roda masuk genangan
+    y_kamera = dunia_kota.TITIK["motor_kenanga"].y - 7.6  # lihat kamera._shot1
+    for (fa, pa, _), (fb, pb, _) in zip(jalur, jalur[1:]):
+        if pa.y < y_kamera <= pb.y and fb >= s1.frame_mulai:
+            adegan.catat("motor_lewat_kamera", fa + (y_kamera - pa.y) / (pb.y - pa.y))
+    for roda, a, b, g in kejadian:
+        adegan.catat(f"ban_genangan_{roda}", a)
     cipratan.buat(kol, m, kejadian)
     for roda, a, b, g in kejadian:
         print(f"[bangun] cipratan roda {roda} frame {a}-{b} di genangan {dunia_kota.GENANGAN[g]['pusat']}")
@@ -148,6 +155,8 @@ def main():
     kamera.atur()  # gerakan kamera, lensa, fokus kabur (lihat film/kamera.py)
     if tegak:
         kamera.atur_tegak()  # kamera kedua per shot untuk bingkai 9:16
+    import json
+    bpy.context.scene["peristiwa"] = json.dumps(sorted(adegan.PERISTIWA, key=lambda p: p["frame"]))
     bpy.ops.wm.save_as_mainfile(filepath=BERKAS)
     atur_cache()  # cache disk hanya bisa diaktifkan setelah berkas tersimpan
     bpy.ops.wm.save_as_mainfile(filepath=BERKAS)

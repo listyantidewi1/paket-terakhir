@@ -16,6 +16,15 @@ from mathutils import Euler, Vector
 from . import dunia_kota as kota
 from . import anak, kucing, kurir, waktu
 
+# Peristiwa untuk sinkronisasi suara (sinkron.py): dicatat saat animasi dibuat,
+# disimpan bangun.py ke film.blend sebagai properti scene "peristiwa" (JSON).
+PERISTIWA = []
+
+
+def catat(nama, frame):
+    PERISTIWA.append({"nama": nama, "frame": float(frame)})
+
+
 # Jadwal shot 3 (frame film). JEDA: lampu hijau di HIJAU, lalu 24 frame
 # (1 detik pada 24 fps) tanpa gerakan apa pun dari kurir maupun kucing.
 HIJAU = 560
@@ -89,15 +98,19 @@ def shot2(m, arm):
     motor_jalan = __import__("film.motor", fromlist=["animasi_jalan"]).animasi_jalan
     motor_jalan(m, [
         (s2.frame_mulai, (X - 3.0, -2.0, 0.0), 0.0),
-        (262, (X - 3.0, 24.0, 0.0), 0.0, "linear"),           # sekitar 25 km/jam
+        (BELOK_KANAN, (X - 3.0, 24.0, 0.0), 0.0, "linear"),   # sekitar 25 km/jam
         (MOTOR_REM, (X - 1.6, 28.3, 0.0), -38.0, "keluar"),    # belok kanan, mengerem di bibir beton
         (BELOK_KIRI, (X - 1.6, 28.3, 0.0), -38.0, "linear"),   # diam: menoleh kali, HP, kali
         (452, (X - 12.0, 32.0, 0.0), 90.0, "masuk"),           # belok kiri ke jalan cabang
         (s2.frame_selesai, (X - 20.0, 32.0, 0.0), 90.0, "linear"),
     ], halus=False)
+    catat("motor_belok_kanan", BELOK_KANAN)
+    catat("motor_berhenti_kali", MOTOR_REM)
+    catat("lihat_hp", LIHAT_HP)
+    catat("motor_belok_kiri", BELOK_KIRI)
     tp = kurir.terapkan_pose
     for f, nama in ((s2.frame_mulai, "duduk_motor"), (MOTOR_REM, "duduk_motor"), (300, "lihat_kali"),
-                    (325, "lihat_kali"), (333, "lihat_hp"), (350, "lihat_hp"), (358, "lihat_kali"),
+                    (325, "lihat_kali"), (LIHAT_HP, "lihat_hp"), (350, "lihat_hp"), (358, "lihat_kali"),
                     (400, "lihat_kali"), (BELOK_KIRI, "duduk_motor")):
         tp(arm, nama, frame=f)
     # Potongan close-up HP: kurir tidak tampil (kamera berada di tempat dadanya)
@@ -110,6 +123,8 @@ def shot2(m, arm):
 
 
 POTONG_KALI = 241  # detik 10: dari close-up HP ke kamera di seberang kali
+BELOK_KANAN = 262  # motor mulai berbelok kanan ke arah kali
+LIHAT_HP = 333  # kurir menunduk melihat layar HP (GPS mengulang)
 BELOK_KIRI = 409  # detik 17: motor mulai berbelok kiri
 MOTOR_REM = 292  # frame motor berhenti di bibir beton
 
@@ -125,7 +140,7 @@ def shot45(m, arm, kol_kurir):
     motor_jalan = __import__("film.motor", fromlist=["animasi_jalan"]).animasi_jalan
     motor_jalan(m, [
         (s4.frame_mulai, (kota.GANG_X - 0.2, -16.0, 0.05), 0.0),
-        (955, tuple(berhenti), 0.0, "keluar"),  # melambat sampai berhenti di depan pagar hijau
+        (BERHENTI_GANG, tuple(berhenti), 0.0, "keluar"),  # melambat sampai berhenti di depan pagar hijau
         (waktu.SHOTS[-1].frame_selesai, tuple(berhenti), 0.0, "linear"),
     ], halus=False)
     kurir.kunci_tempat(arm, s4.frame_mulai - 1, (-0.9, -0.9, 0), -409)
@@ -146,11 +161,16 @@ TEMPAT_S5 = Vector((0.0, -1.5, 0.0))  # kurir di belakang boks motor, menghadap 
 ARAH_LABEL = Vector((0.9, 0.25, 0.9)).normalized()
 
 
+BERHENTI_GANG = 955  # motor berhenti di depan pagar hijau rumah tujuan
+
+
 def shot5(m, arm):
     """Shot 5: kurir memegang paket dengan dua tangan, label basah sedikit miring,
     diterangi lampu teras rumah tujuan yang hangat."""
     s5 = waktu.SHOTS[4]
     scene = bpy.context.scene
+    catat("mesin_mati", s5.frame_mulai)
+    catat("motor_berhenti_gang", BERHENTI_GANG)
     kurir.kunci_tempat(arm, s5.frame_mulai - 1, (0, 0, 0), 0)
     kurir.terapkan_pose(arm, "duduk_motor", frame=s5.frame_mulai - 1)  # tahan duduk sepanjang shot 4
     for f in (s5.frame_mulai, s5.frame_selesai):
@@ -207,6 +227,9 @@ def _konstan_jalur(obj):
     _konstan(obj)
 
 
+PINTU_TUTUP = (1640, 1700)  # pintu mulai menutup, pintu tertutup
+
+
 def shot8(arm):
     """Shot 8: kurir sudah masuk rumah; pintu menutup perlahan, gang kembali gelap."""
     s8 = waktu.SHOTS[7]
@@ -217,7 +240,9 @@ def shot8(arm):
             obj.keyframe_insert("hide_render", frame=f)
     pintu = bpy.data.objects["Pintu_Tujuan"]
     buka = math.radians(pintu["buka_derajat"])
-    for f, sudut in ((1640, buka), (1700, 0.0)):
+    catat("pintu_mulai_tutup", PINTU_TUTUP[0])
+    catat("pintu_tertutup", PINTU_TUTUP[1])
+    for f, sudut in ((PINTU_TUTUP[0], buka), (PINTU_TUTUP[1], 0.0)):
         pintu.rotation_euler = (0, 0, sudut)
         pintu.keyframe_insert("rotation_euler", index=2, frame=f)
 
@@ -256,6 +281,8 @@ def shot3(m, arm, kc, kol_kurir):
     # Melangkah ke samping boks, menghadap boks (+X motor)
     tp(arm, "jalan_kiri", frame=626)
     tp(arm, "jalan_kanan", frame=634)
+    catat("langkah", 626)
+    catat("langkah", 634)
     tp(arm, "berdiri", frame=640)
     kurir.kunci_tempat(arm, 640, (-0.45, -0.75, 0), -90)
     tp(arm, "ambil_kucing", frame=650)  # tangan memegang kucing
@@ -269,6 +296,7 @@ def shot3(m, arm, kc, kol_kurir):
         kurir.kunci_tempat(arm, f, lok, arah)
     for i, f in enumerate(range(670, 712, 10)):
         tp(arm, "jalan_bawa_kiri" if i % 2 == 0 else "jalan_bawa_kanan", frame=f)
+        catat("langkah", f)
     tp(arm, "bawa_kucing", frame=716)
     tp(arm, "taruh_kucing", frame=730)  # membungkuk, kucing di dudukan bangku
     tp(arm, "taruh_kucing", frame=734)
@@ -278,6 +306,7 @@ def shot3(m, arm, kc, kol_kurir):
     kurir.kunci_tempat(arm, s3.frame_selesai, (-0.9, -0.9, 0), -409)
     for i, f in enumerate(range(756, s3.frame_selesai + 1, 11)):
         tp(arm, "jalan_kiri" if i % 2 == 0 else "jalan_kanan", frame=f)
+        catat("langkah", f)
 
     # Saat kurir turun, ponco jangan tersangkut di jok atau boks (gesekannya
     # tinggi agar ponco tidak merosot ketika duduk): tumbukan motor dimatikan.
@@ -290,6 +319,7 @@ def shot3(m, arm, kc, kol_kurir):
 
     # --- Lampu lalu lintas
     _lampu_hijau(HIJAU)
+    catat("lampu_hijau", HIJAU)
 
     # --- Kucing (koordinat dunia; tidak menjadi anak motor)
     mw = m.matrix_world.copy()
@@ -305,6 +335,8 @@ def shot3(m, arm, kc, kol_kurir):
     _kunci_kucing(kc, 498, dekat, arah_boks, "jongkok", ayun=2)
     # Lompatan: lintasan parabola per frame dari tanah ke tutup boks
     f0, f1 = 500, 512
+    catat("kucing_lompat", f0)
+    catat("kucing_mendarat", f1)
     for f in range(f0, f1 + 1):
         t = (f - f0) / (f1 - f0)
         p = dekat.lerp(boks, t) + Vector((0, 0, 0.35 * 4 * t * (1 - t)))
@@ -322,6 +354,7 @@ def shot3(m, arm, kc, kol_kurir):
     # Di awal (650-658) kucing berpindah halus dari boks ke tangan dan berputar
     # mengikuti arah kurir; di akhir (722-731) menyatu halus ke dudukan bangku.
     lepas = 732
+    catat("kucing_di_bangku", lepas)
     pb = arm.pose.bones
     for f in range(650, lepas):
         scene.frame_set(f)
@@ -429,6 +462,8 @@ def shot67(m, arm, kol_kurir, kol_anak):
     ]
     for f, nama in jadwal:
         tp(arm, nama, frame=f)
+        if nama == "ketuk":
+            catat("ketuk", f)
 
     # Paket: tangan kiri memegang helm dan tangan kanan mengetuk, jadi paket
     # disembunyikan dari render selama shot 6-7 (belum ada tangan yang memegangnya).
@@ -442,6 +477,8 @@ def shot67(m, arm, kol_kurir, kol_anak):
     # Pintu terbuka perlahan (3 detik) ke dalam rumah
     pintu = bpy.data.objects["Pintu_Tujuan"]
     buka = math.radians(pintu["buka_derajat"])
+    catat("pintu_mulai_buka", s7.frame_mulai + 3)
+    catat("pintu_terbuka", s7.frame_mulai + 73)
     for f, sudut in ((s7.frame_mulai + 3, 0.0), (s7.frame_mulai + 73, buka), (s7.frame_selesai, buka)):
         pintu.rotation_euler = (0, 0, sudut)
         pintu.keyframe_insert("rotation_euler", index=2, frame=f)
