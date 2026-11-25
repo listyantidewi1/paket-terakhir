@@ -808,7 +808,11 @@ def _pagar_hijau(k, rng, f, a0, a1, nomor):
             pa = ap + rng.uniform(-0.45, 0.15)
             pc = rng.uniform(0.5, 1.2)
             r = rng.uniform(0.18, 0.32)
-            k["daun"].bola(f.titik(pa, b0 - 0.3 - rng.uniform(0, 0.2), pc), (r, r, r * 0.9))
+            # Semak menempel di pagar dan paling jauh menjorok 30 cm ke gang,
+            # supaya motor yang lewat dan berhenti di dekat pagar tidak menembusnya.
+            maju = 0.1 + 0.3 * rng.uniform(0, 0.2)
+            r = min(r, 0.3 - maju)
+            k["daun"].bola(f.titik(pa, b0 - maju, pc), (r * 1.3, r, r * 1.1))
     elif gaya == "sulur":
         for _ in range(12):
             pa = ap + rng.uniform(-0.05, 0.35)
@@ -842,7 +846,9 @@ def _isi_rumah_tujuan(kol):
     f.kotak(g, pintu - 0.44, pintu + 0.44, mundur + 0.02, mundur + 0.06, 0.31, t["atas"] - 0.01)
     for c0 in (0.6, 1.45):  # panel timbul
         f.kotak(g, pintu - 0.34, pintu + 0.34, mundur + 0.01, mundur + 0.02, c0, c0 + 0.6)
-    f.kotak(k["logam_gelap"], pintu + 0.3, pintu + 0.38, mundur - 0.01, mundur + 0.02, 1.25, 1.29)  # gagang
+    # Gagang di kedua sisi daun pintu (menembus daun), ikut berayun bersama pintu
+    f.kotak(k["logam_gelap"], pintu + 0.28, pintu + 0.38, mundur - 0.025, mundur + 0.105, 1.25, 1.28)
+    f.kotak(k["logam_gelap"], pintu + 0.34, pintu + 0.38, mundur - 0.005, mundur + 0.085, 1.2, 1.33)  # pelat
     # Lampu gantung di dalam (bohlam terlihat di ujung lorong)
     bohlam = f.titik(pintu, mundur + t["dalam"] * 0.45, t["h"] - 0.45)
     k["lampu_teras"].kotak(bohlam - Vector((0.04, 0.04, 0.04)), bohlam + Vector((0.04, 0.04, 0.04)))
@@ -853,6 +859,11 @@ def _isi_rumah_tujuan(kol):
     pintu_obj.data.transform(Matrix.Translation(-engsel))
     pintu_obj.location = engsel
     pintu_obj["buka_derajat"] = PINTU_BUKA * (1 if f.u.cross(f.n).z > 0 else -1)
+    # Gagang menjadi anak daun pintu supaya ikut terbuka dan tertutup
+    gagang = bpy.data.objects["Rumah_Tujuan_logam_gelap"]
+    gagang.name = "Pintu_Tujuan_Gagang"
+    gagang.parent = pintu_obj
+    gagang.matrix_parent_inverse = Matrix.Translation(-engsel)
 
     lampu = _lampu(k, "Rumah_Tujuan_Lampu", bohlam - Vector((0, 0, 0.08)), (1.0, 0.62, 0.3), 120,
                    jenis="POINT", lunak=0.1)

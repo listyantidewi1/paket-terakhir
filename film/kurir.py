@@ -346,7 +346,8 @@ def _ke_armature(obj, arm):
 
 
 def _tubuh(kol, arm):
-    m = _Mesh(["kurir_baju", "kurir_celana", "kurir_bot", "kurir_sarung_tangan", "kurir_kulit", "kurir_rambut"])
+    m = _Mesh(["kurir_baju", "kurir_celana", "kurir_bot", "kurir_sarung_tangan", "kurir_kulit", "kurir_rambut",
+               "ponco_kuning"])
     m.lonjong((0, 0, 0.88), (0, 0, 1.04), 0.17, 0.12, "pinggul", "kurir_celana")
     m.lonjong((0, 0, 1.04), (0, 0, 1.27), 0.155, 0.105, "punggung", "kurir_baju")
     m.lonjong((0, 0, 1.25), (0, 0, 1.44), 0.19, 0.12, "dada", "kurir_baju")
@@ -360,8 +361,11 @@ def _tubuh(kol, arm):
     for s, x in (("L", -1), ("R", 1)):
         # Bahu sedikit lebih rendah dari lereng bahu ponco supaya tidak menembus
         m.lonjong((x * 0.04, 0, 1.405), (x * 0.17, 0, 1.405), 0.05, 0.055, f"bahu.{s}", "kurir_baju", lebih=0.04)
-        m.lonjong((x * 0.18, 0, 1.42), (x * 0.2, 0, 1.13), 0.055, 0.055, f"lengan_atas.{s}", "kurir_baju")
-        m.lonjong((x * 0.2, 0, 1.13), (x * 0.21, 0.03, 0.88), 0.045, 0.045, f"lengan_bawah.{s}", "kurir_baju")
+        # Lengan memakai lengan ponco (bahan yang sama dengan ponco, sedikit longgar):
+        # saat tangan terulur ke setang, ke paket, atau ke pintu, yang keluar dari
+        # badan ponco adalah lengan ponco kuning, bukan lengan baju gelap yang menembus kain.
+        m.lonjong((x * 0.18, 0, 1.42), (x * 0.2, 0, 1.13), 0.06, 0.06, f"lengan_atas.{s}", "ponco_kuning")
+        m.lonjong((x * 0.2, 0, 1.15), (x * 0.21, 0.03, 0.9), 0.054, 0.054, f"lengan_bawah.{s}", "ponco_kuning")
         m.lonjong((x * 0.21, 0.03, 0.9), (x * 0.21, 0.05, 0.79), 0.032, 0.05, f"tangan.{s}",
                   "kurir_sarung_tangan", lebih=0.0)
         m.lonjong((x * 0.1, 0, 0.95), (x * 0.1, 0.02, 0.52), 0.08, 0.08, f"paha.{s}", "kurir_celana")

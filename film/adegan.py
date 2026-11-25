@@ -101,8 +101,14 @@ def shot2(m, arm):
         (BELOK_KANAN, (X - 3.0, 24.0, 0.0), 0.0, "linear"),   # sekitar 25 km/jam
         (MOTOR_REM, (X - 1.6, 28.3, 0.0), -38.0, "keluar"),    # belok kanan, mengerem di bibir beton
         (BELOK_KIRI, (X - 1.6, 28.3, 0.0), -38.0, "linear"),   # diam: menoleh kali, HP, kali
-        (452, (X - 12.0, 32.0, 0.0), 90.0, "masuk"),           # belok kiri ke jalan cabang
-        (s2.frame_selesai, (X - 20.0, 32.0, 0.0), 90.0, "linear"),
+        # Belok kiri ke jalan cabang lewat tengah simpang: motor memutar dulu,
+        # baru masuk ke cabang di y 32, jadi tidak memotong sudut tembok bata
+        # (sudutnya di X - 5,7; y 29,7).
+        (421, (X - 1.9, 29.6, 0.0), 10.0, "masuk"),
+        (431, (X - 3.6, 31.3, 0.0), 60.0, "linear"),
+        (442, (X - 7.0, 32.0, 0.0), 90.0, "linear"),
+        (458, (X - 12.0, 32.0, 0.0), 90.0, "linear"),
+        (s2.frame_selesai, (X - 18.9, 32.0, 0.0), 90.0, "linear"),
     ], halus=False)
     catat("motor_belok_kanan", BELOK_KANAN)
     catat("motor_berhenti_kali", MOTOR_REM)
@@ -423,6 +429,24 @@ def _anak_siluet(kol_anak):
     bpy.data.objects["Rumah_Tujuan_Lampu"].data.energy = 220
 
 
+ANAK_TUNGGU = 0.85  # meter di belakang tempat berdirinya, di luar ayunan daun pintu
+ANAK_MAJU = (1356, 1384)  # pintu terbuka di frame 1370; kalimat anak mulai di 1382
+ANAK_MUNDUR = (1610, 1636)  # pintu mulai menutup di frame 1640
+
+
+def _langkah_anak(akar, luar, f0, f1, maju, langkah=3):
+    """Anak melangkah kecil antara tempat tunggu dan ambang pintu (sedikit naik turun)."""
+    ambang = kota.TITIK["lantai_dalam"].copy()
+    tunggu = ambang - luar * ANAK_TUNGGU
+    for f in range(f0, f1 + 1):
+        t = (f - f0) / (f1 - f0)
+        halus = t * t * (3 - 2 * t)
+        p = tunggu.lerp(ambang, halus if maju else 1 - halus)
+        p.z += 0.012 * abs(math.sin(math.pi * langkah * t))
+        akar.location = p
+        akar.keyframe_insert("location", frame=f)
+
+
 def shot67(m, arm, kol_kurir, kol_anak):
     """Shot 6-7 di teras rumah tujuan.
 
@@ -487,5 +511,10 @@ def shot67(m, arm, kol_kurir, kol_anak):
     arah_anak = math.degrees(math.atan2(-luar.x, luar.y))
     akar, api, lampu = anak.buat_anak(kol_anak, kota.TITIK["lantai_dalam"], arah_anak)
     anak.goyang_api(api, lampu, s6.frame_mulai, s7.frame_selesai)
+    # Daun pintu berayun ke dalam rumah, jadi anak menunggu di luar jangkauan
+    # ayunannya, baru melangkah ke ambang setelah pintu hampir terbuka penuh.
+    # Sebelum pintu menutup di shot 8, anak mundur lagi ke tempat yang sama.
+    _langkah_anak(akar, luar, ANAK_MAJU[0], ANAK_MAJU[1], maju=True)
+    _langkah_anak(akar, luar, ANAK_MUNDUR[0], ANAK_MUNDUR[1], maju=False)
     _anak_siluet(kol_anak)
     scene.frame_set(1)
