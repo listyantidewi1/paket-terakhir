@@ -223,13 +223,17 @@ def genangan_air(nama):
 
 
 def pbr(nama, id_aset, ukuran=2.0, warna=(1, 1, 1), basah=0.5, benjol=0.25,
-        genangan=0.0, logam=False, licin=None):
+        genangan=0.0, logam=False, licin=None, alir=0.0):
     """Bahan bertekstur Poly Haven dengan proyeksi kotak (tanpa UV).
 
     ukuran   : lebar satu ulangan tekstur dalam meter
     basah    : 0 kering .. 1 sangat basah (lebih gelap)
     licin    : seberapa banyak kekasaran turun karena basah (bawaan = basah)
-    genangan : 0 tanpa genangan .. 1 banyak genangan kecil (noise prosedural)
+    genangan : 0 tanpa genangan .. 1 banyak genangan kecil (noise prosedural);
+               di atas 1 genangan makin luas dan saling menyambung (hujan deras)
+    alir     : 0 tanpa aliran .. 1 lapisan air tipis yang mengalir ke -Y di
+               seluruh permukaan (alur air memanjang yang bergerak) dan cincin
+               tetes hujan di mana-mana, bukan hanya di genangan
     """
     licin = basah if licin is None else licin
     b, p = _bahan_baru(nama)
@@ -262,7 +266,7 @@ def pbr(nama, id_aset, ukuran=2.0, warna=(1, 1, 1), basah=0.5, benjol=0.25,
         p.isi(noise, "Distortion", 0.4)
         p.s(koor.outputs["Object"], noise.inputs["Vector"])
         rentang = p.n("ShaderNodeMapRange", interpolation_type="SMOOTHSTEP")
-        batas = 0.64 - 0.06 * genangan
+        batas = 0.64 - 0.06 * genangan - 0.14 * max(0.0, genangan - 1.0)
         p.isi(rentang, "From Min", batas)
         p.isi(rentang, "From Max", batas + 0.07)
         p.s(noise.outputs["Fac"], rentang.inputs["Value"])
@@ -270,6 +274,44 @@ def pbr(nama, id_aset, ukuran=2.0, warna=(1, 1, 1), basah=0.5, benjol=0.25,
         warna_dasar = p.campur(topeng, warna_dasar, (0.012, 0.012, 0.014))
         kasar = p.campur(topeng, kasar, 0.05, warna=False)
         kuat_benjol = p.math("MULTIPLY", p.math("SUBTRACT", 1.0, topeng), benjol)
+
+    alur = None
+    if alir > 0:
+        # Air hujan yang mengalir di jalan: alur memanjang searah Y yang bergeser
+        # ke -Y dan terus berubah bentuk. Di dalam alur permukaan licin seperti
+        # air (memantulkan lampu), di luarnya tetap aspal basah.
+        waktu = p.n("ShaderNodeValue", name="Waktu_Alir")
+        sok = waktu.outputs[0]
+        sok.default_value = 0.0
+        sok.keyframe_insert("default_value", frame=1)
+        sok.default_value = 1.0
+        sok.keyframe_insert("default_value", frame=25)  # 1 satuan per detik
+        geser = p.n("ShaderNodeCombineXYZ")
+        p.s(p.math("MULTIPLY", sok, 0.9), geser.inputs["Y"])  # sekitar 0,9 m/s
+        maju = p.n("ShaderNodeVectorMath", operation="ADD")
+        p.s(koor.outputs["Object"], maju.inputs[0])
+        p.s(geser.outputs[0], maju.inputs[1])
+        regang = p.n("ShaderNodeMapping")
+        p.isi(regang, "Scale", (3.2, 0.5, 1.0))
+        p.s(maju.outputs[0], regang.inputs["Vector"])
+        arus = p.n("ShaderNodeTexNoise", noise_dimensions="4D", name="Arus")
+        p.isi(arus, "Scale", 1.0)
+        p.isi(arus, "Detail", 5.0)
+        p.isi(arus, "Roughness", 0.6)
+        p.isi(arus, "Distortion", 0.6)
+        p.s(regang.outputs["Vector"], arus.inputs["Vector"])
+        p.s(p.math("MULTIPLY", sok, 0.35), _sok(arus.inputs, "W"))
+        rentang_alur = p.n("ShaderNodeMapRange", interpolation_type="SMOOTHSTEP")
+        p.isi(rentang_alur, "From Min", 0.56 - 0.1 * alir)
+        p.isi(rentang_alur, "From Max", 0.66 - 0.1 * alir)
+        p.s(arus.outputs["Fac"], rentang_alur.inputs["Value"])
+        alur = rentang_alur.outputs["Result"]
+        warna_dasar = p.campur(p.math("MULTIPLY", alur, 0.75), warna_dasar, (0.014, 0.014, 0.016))
+        kasar = p.campur(alur, kasar, 0.07, warna=False)
+        if isinstance(kuat_benjol, float):
+            kuat_benjol = p.math("MULTIPLY", p.math("SUBTRACT", 1.0, p.math("MULTIPLY", alur, 0.8)), kuat_benjol)
+        else:
+            kuat_benjol = p.math("MULTIPLY", p.math("SUBTRACT", 1.0, p.math("MULTIPLY", alur, 0.8)), kuat_benjol)
 
     p.s(warna_dasar, bsdf.inputs["Base Color"])
     p.s(kasar, bsdf.inputs["Roughness"])
@@ -281,11 +323,26 @@ def pbr(nama, id_aset, ukuran=2.0, warna=(1, 1, 1), basah=0.5, benjol=0.25,
         p.s(kuat_benjol, bump.inputs["Strength"])
     p.s(tinggi, bump.inputs["Height"])
     normal = bump.outputs["Normal"]
-    if topeng is not None:
+    if alur is not None:
+        # Riak arus: permukaan air yang bergerak, hanya di dalam alur
+        riak_arus = p.n("ShaderNodeBump")
+        p.isi(riak_arus, "Distance", 0.006)
+        p.s(p.math("MULTIPLY", alur, 0.5), riak_arus.inputs["Strength"])
+        p.s(arus.outputs["Fac"], riak_arus.inputs["Height"])
+        p.s(normal, riak_arus.inputs["Normal"])
+        normal = riak_arus.outputs["Normal"]
+    if topeng is not None and alur is not None:
+        # Hujan deras: cincin tetes di genangan dan di alur, tipis di tempat lain
+        kuat_riak = p.math("ADD", 0.08, p.math("MULTIPLY", p.math("MAXIMUM", topeng, alur), 0.3))
+        normal = _normal_riak(p, koor, kuat_riak, normal)
+    elif topeng is not None:
         normal = _normal_riak(p, koor, p.math("MULTIPLY", topeng, 0.35), normal)
     p.s(normal, bsdf.inputs["Normal"])
     if logam:
         p.s(tex("metal", True), bsdf.inputs["Metallic"])
+    if alir > 0:
+        from .geo import animasi_linear
+        animasi_linear(b.node_tree)
     return b
 
 
@@ -458,9 +515,13 @@ def kabut(nama, kerapatan):
 def siapkan():
     """Buat semua bahan kota sekali. Nama bahan dipakai sebagai kunci Kanvas."""
     # Basah (gelap) tetapi tetap kasar; yang licin hanya genangannya
-    pbr("aspal_basah", "asphalt_01", ukuran=3.0, basah=0.8, licin=0.65, benjol=0.45, genangan=0.6)
-    pbr("trotoar", "concrete_floor_02", ukuran=2.5, warna=(0.75, 0.75, 0.72), basah=0.7, genangan=0.3)
-    pbr("paving_gang", "concrete_floor_02", ukuran=2.0, warna=(0.7, 0.7, 0.68), basah=0.8, licin=0.6, genangan=0.5)
+    # Hujan deras: seluruh jalan mengilap basah, genangan luas dan saling
+    # menyambung, dan air mengalir di permukaannya.
+    pbr("aspal_basah", "asphalt_01", ukuran=3.0, basah=0.95, licin=0.9, benjol=0.45, genangan=1.6, alir=1.0)
+    pbr("trotoar", "concrete_floor_02", ukuran=2.5, warna=(0.75, 0.75, 0.72), basah=0.85, licin=0.8, genangan=0.9,
+        alir=0.5)
+    pbr("paving_gang", "concrete_floor_02", ukuran=2.0, warna=(0.7, 0.7, 0.68), basah=0.95, licin=0.85, genangan=1.5,
+        alir=1.0)
     pbr("beton", "concrete_floor_02", ukuran=2.5, warna=(0.8, 0.8, 0.78), basah=0.5)
     pbr("beton_kali", "concrete_floor_02", ukuran=3.0, warna=(0.55, 0.6, 0.5), basah=0.9, benjol=0.5)
     pbr("bata", "red_bricks_04", ukuran=1.5, basah=0.6, benjol=0.5)
