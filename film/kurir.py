@@ -167,10 +167,13 @@ POSE = {
                "siku.L": (-0.6, -0.1, 0.9), "siku.R": (0.6, -0.1, 0.9)},
         "ik_rot": {"ik_tangan.L": (90, 0, -80), "ik_tangan.R": (90, 0, 80)},
     },
-    # Mengetuk pintu dengan tangan kanan; tangan kiri memegang paket di pinggang
+    # Mengetuk pintu dengan tangan kanan; tangan kiri memegang paket di pinggang.
+    # Muka pintu 0,43 m di depan kurir dan tangan 0,10 m lebih panjang dari
+    # pergelangan, jadi pergelangan berhenti di 0,32 (buku jari tepat di pintu,
+    # tidak masuk ke daun pintu).
     "ketuk_pintu": {
         "pinggul": (0, 0, 0.94),
-        "ik": {"ik_tangan.R": (0.14, 0.42, 1.42), "ik_tangan.L": (-0.18, 0.22, 1.0),
+        "ik": {"ik_tangan.R": (0.14, 0.32, 1.42), "ik_tangan.L": (-0.18, 0.22, 1.0),
                "ik_kaki.L": (-0.1, 0, 0.1), "ik_kaki.R": (0.1, 0, 0.1),
                "siku.R": (0.6, -0.1, 1.1)},
         "ik_rot": {"ik_tangan.R": (90, 0, 0), "ik_tangan.L": (70, 0, -40)},
@@ -777,7 +780,7 @@ POSE["helm_di_tangan_paket"] = {**POSE["berdiri_paket"], "helm": 1.0,
 POSE["ketuk"] = {**POSE["ketuk_pintu"], "helm": 1.0,
                  "ik": {**POSE["ketuk_pintu"]["ik"], **_PAKET_KIRI}, "ik_rot": {**POSE["ketuk_pintu"]["ik_rot"],
                                                                                **_PAKET_KIRI_ROT}}
-POSE["ketuk_tarik"] = {**POSE["ketuk"], "ik": {**POSE["ketuk"]["ik"], "ik_tangan.R": (0.14, 0.3, 1.4)}}
+POSE["ketuk_tarik"] = {**POSE["ketuk"], "ik": {**POSE["ketuk"]["ik"], "ik_tangan.R": (0.14, 0.2, 1.4)}}
 
 # Tangan kiri sedikit menjauh dari badan: helm yang tergantung di pergelangan
 # kiri berada di luar sisi ponco dan terlihat dari belakang.
