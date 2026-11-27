@@ -2,7 +2,8 @@
 
 Kamera dibuat oleh shot.py (satu per shot, berganti lewat marker). Modul ini
 memberi keyframe posisi, arah, lensa, dan fokus (depth of field). Semua
-gerakan memakai easing. Motion blur ringan diatur di bangun.py.
+gerakan memakai easing. Motion blur ringan diatur di bangun.py; posisi rana
+di tepi setiap potongan kamera diatur atur_rana().
 
 Wajah kurir tidak pernah terlihat: kamera selalu di belakang atau samping
 belakang kurir, dan saat helm terpasang kaca helm gelap. Anak hanya siluet.
@@ -96,6 +97,11 @@ def _shot2(s):
         lok = mw @ Vector((0.0, -0.012, 0.28))
         _kunci(cam, f, lok, mw.translation, 50 if f == s.frame_mulai else None,
                atas=(mw.to_3x3() @ Vector((0, 1, 0))).normalized())
+    # Kamera mengikuti HP frame demi frame. Motor (jadi juga HP) bergerak linear di
+    # antara frame, jadi kunci kamera juga linear: kurva Bezier melandai di ujung
+    # shot sehingga kamera tertinggal dari HP selama rana terbuka (blur di frame
+    # 169-170 dan 239-240).
+    _linear(cam)
     _fokus(cam, "HP_Layar", 2.0)
 
     # Kamera kedua untuk potongan seberang kali, berganti lewat marker
@@ -204,10 +210,56 @@ def _shot8(s):
     _fokus(cam, "Pintu_Tujuan", 5.6)
 
 
+def _linear(obj):
+    from bpy_extras import anim_utils
+    ad = obj.animation_data
+    for fc in anim_utils.action_get_channelbag_for_slot(ad.action, ad.action_slot).fcurves:
+        for kp in fc.keyframe_points:
+            kp.interpolation = "LINEAR"
+
+
+def atur_rana():
+    """Rana (motion blur) tidak pernah menyeberang pergantian kamera.
+
+    Rana terbuka 0,25 frame. Di tengah shot rana berpusat di frame (CENTER).
+    Di frame pertama setiap potongan kamera rana mulai tepat di frame itu (START),
+    dan di frame terakhir rana berakhir tepat di frame itu (END). Tanpa ini,
+    frame di tepi potongan ikut memakai waktu di antara dua shot, saat benda
+    sedang diinterpolasi dari lokasi shot lama ke lokasi shot baru (blur ratusan
+    sampai puluhan ribu piksel di frame 168, 169, 480, 792, 961, 1152, 1585).
+    Diperiksa dengan: blender --background --python periksa.py -- --hanya rana
+    """
+    scene = bpy.context.scene
+    r = scene.render
+    awal = sorted({m.frame for m in scene.timeline_markers} | {waktu.FRAME_AWAL})
+    akhir = [a - 1 for a in awal[1:]] + [waktu.FRAME_AKHIR]
+    # Awal dan akhir film tidak bersebelahan dengan shot lain: tetap CENTER.
+    kunci = {waktu.FRAME_AWAL: "CENTER"}
+    for a, b in zip(awal, akhir):
+        if a > waktu.FRAME_AWAL:
+            kunci[a] = "START"
+            if b - a >= 2:
+                kunci[a + 1] = "CENTER"
+        if waktu.FRAME_AWAL < b < waktu.FRAME_AKHIR:
+            kunci[b] = "END"
+            if b - 1 not in kunci:
+                kunci[b - 1] = "CENTER"
+    for f, posisi in sorted(kunci.items()):
+        r.motion_blur_position = posisi
+        scene.keyframe_insert("render.motion_blur_position", frame=f)
+    from bpy_extras import anim_utils
+    ad = scene.animation_data
+    for fc in anim_utils.action_get_channelbag_for_slot(ad.action, ad.action_slot).fcurves:
+        if fc.data_path == "render.motion_blur_position":
+            for kp in fc.keyframe_points:
+                kp.interpolation = "CONSTANT"
+
+
 def atur():
     S = waktu.SHOTS
     for fungsi, s in zip((_shot1, _shot2, _shot3, _shot4, _shot5, _shot6, _shot7, _shot8), S):
         fungsi(s)
+    atur_rana()
     bpy.context.scene.frame_set(1)
 
 
