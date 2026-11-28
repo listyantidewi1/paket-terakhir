@@ -462,13 +462,80 @@ Jangan mengubah waktu shot, kamera lain, atau suara. Setelah selesai, jalankan c
 ### Prompt 9.1 · Memeriksa hasil render
 
 ```text
-Buat periksa.py yang memeriksa hasil di render/lebar dan render/tegak:
-- Lembar kontak: satu gambar kecil setiap 12 frame, per shot, dengan nomor frame, disimpan di cek/periksa/.
-- Frame hilang: daftar frame yang belum ada atau berkasnya rusak.
-- Deteksi lompatan: bandingkan setiap frame dengan frame sebelumnya, dan tandai frame yang perubahan terangnya jauh lebih besar dari rata-rata shot itu (kecuali di pergantian shot).
-- Pemeriksaan data dari film.blend: untuk setiap frame, bandingkan jarak yang ditempuh motor dengan putaran roda, dan tandai yang tidak cocok. Periksa juga apakah kucing menembus boks dan apakah wajah kurir atau anak menghadap kamera.
-- Versi tegak: gambar kotak area aman Short (bagian bawah dan kanan tertutup tombol YouTube) dan tandai kalau HP, label paket, atau kue masuk ke area itu.
-Tulis semua temuan di cek/laporan.md, lengkap dengan shot dan nomor frame. Jangan memperbaiki apa pun dulu.
+Saya sudah menonton film_lebar.mp4 versi pertama dan menemukan kesalahan dengan mata:
+kurir menembus sudut tembok saat berbelok di shot 2, lengan menembus ponco,
+motor menembus tanaman di gang, anak menembus pintu, dan gagang pintu tidak ikut
+bergerak bersama pintu. Semuanya sudah diperbaiki dan film sudah dirender ulang.
+
+Saya tidak mau bergantung pada mata saja. Buat periksa.py yang memeriksa film.blend
+dan film_lebar.mp4:
+- Tembus: setiap 2 frame, cari benda bergerak (kurir, motor, anak, pintu, kucing,
+  paket) yang menembus benda lain, termasuk tubuh kurir yang keluar dari ponco.
+- Roda: bandingkan jarak tempuh motor dengan putaran roda di setiap frame.
+- Lompatan: bandingkan setiap frame film_lebar.mp4 dengan frame sebelumnya, dan tandai
+  perubahan yang jauh lebih besar dari rata-rata shot itu (kecuali di pergantian shot).
+- Lembar kontak per shot dari film_lebar.mp4: satu gambar setiap 12 frame, dengan nomor frame.
+Tulis semua temuan di cek/laporan.md, lengkap dengan shot dan nomor frame.
+
+Uji dulu pemeriksaan tembus pada versi pertama (commit 5b1736f) memakai git worktree:
+pemeriksa harus menemukan kesalahan yang saya sebut di atas. Video versi pertama tidak
+ada di sini, jadi pemeriksaan lompatan dan lembar kontak cukup untuk versi sekarang.
+Setelah itu, jalankan semua pemeriksaan pada versi sekarang. Jangan memperbaiki apa pun dulu.
+```
+
+### Prompt 9.2 · Frame kabur di pergantian shot
+
+```text
+Saya sudah melihat frame 169, 170, 240, 961, dan 1152 di film_lebar.mp4. Gambarnya
+kabur dan berbayang, padahal frame di sekitarnya tajam. Saat film diputar biasa,
+ini tidak terlihat, tetapi penonton yang menjeda video akan melihatnya.
+
+Buktikan dulu penyebabnya dengan angka, jangan hanya menduga. Lalu perbaiki supaya
+motion blur di setiap frame hanya memakai posisi kamera dari shot yang sama. Periksa
+semua pergantian shot, bukan hanya yang ditandai. Setelah itu, tulis daftar frame
+yang harus dirender ulang di cek/render_ulang.txt, satu nomor frame per baris.
+
+Temuan tembus dan roda yang lain biarkan dulu: sarung tangan memang di luar ponco,
+dan kurir memang duduk di jok.
+```
+
+### Prompt 9.3 · Memeriksa ulang setelah render ulang
+
+```text
+Laptop sudah merender ulang 24 frame di render_ulang.txt, dan film_lebar.mp4 sekarang
+versi baru. Jalankan periksa.py lagi pada video ini, cukup pemeriksaan lompatan dan
+rana (tembus tidak berubah). Tunjukkan apakah frame 169, 240, 961, dan 1152 masih
+ditandai, lalu buat gambar berdampingan frame itu dari video lama dan video baru di
+cek/sebelum_sesudah.png. Video lama ada di /tmp/film_lebar_v2.mp4.
+```
+
+### Prompt 9.4 · Anak berjalan, bukan bergeser
+
+```text
+Saya menonton shot 7 dengan teliti. Anak yang membawa kue tidak melangkah,
+tetapi hanya bergeser maju ke depan ayahnya, seperti boneka yang didorong.
+Hal yang sama terjadi saat anak mundur sebelum pintu menutup di shot 8.
+
+Perbaiki supaya anak benar-benar berjalan dengan langkah kecil anak umur enam tahun.
+Kaki kiri dan kanan melangkah bergantian, dan kaki yang menapak tidak ikut tergelincir
+di lantai. Badan naik turun mengikuti langkah dan sedikit bergoyang ke kiri dan kanan.
+Kue tetap dipegang di depan dada dan tidak boleh tumpah, jadi tangan dan kue ikut badan.
+
+Periksa hasilnya dengan gambar cek 480p dari samping anak, beberapa frame di setiap
+langkah, lalu susun menjadi satu lembar di cek/langkah_anak.png. Setelah itu, tulis
+daftar frame yang harus dirender ulang di cek/render_ulang_anak.txt, satu nomor frame
+per baris. Jangan membuat commit dulu.
+```
+
+### Prompt 9.5 · Daftar frame render ulang yang lebih cepat
+
+```text
+Perbandingan seluruh film terlalu lama, dan mesin cloud mati sebelum selesai.
+Buat lebih cepat: bandingkan hanya benda milik anak (tubuh, kue, lilin, dan api)
+antara versi lama dan versi baru, di frame 1153 sampai 1800, dengan tiga waktu shutter
+seperti tadi. Frame yang posisi anaknya berbeda lebih dari 1 mm masuk ke daftar.
+Tulis daftarnya di cek/render_ulang_anak.txt, satu nomor frame per baris, lalu jelaskan
+singkat apa saja yang berubah. Jangan membuat commit dulu.
 ```
 
 ## Bab 10
