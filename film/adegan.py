@@ -429,22 +429,9 @@ def _anak_siluet(kol_anak):
     bpy.data.objects["Rumah_Tujuan_Lampu"].data.energy = 220
 
 
-ANAK_TUNGGU = 0.85  # meter di belakang tempat berdirinya, di luar ayunan daun pintu
+ANAK_TUNGGU = 0.85  # meter di belakang ambang (ke dalam rumah), di luar ayunan daun pintu
 ANAK_MAJU = (1356, 1384)  # pintu terbuka di frame 1370; kalimat anak mulai di 1382
 ANAK_MUNDUR = (1610, 1636)  # pintu mulai menutup di frame 1640
-
-
-def _langkah_anak(akar, luar, f0, f1, maju, langkah=3):
-    """Anak melangkah kecil antara tempat tunggu dan ambang pintu (sedikit naik turun)."""
-    ambang = kota.TITIK["lantai_dalam"].copy()
-    tunggu = ambang - luar * ANAK_TUNGGU
-    for f in range(f0, f1 + 1):
-        t = (f - f0) / (f1 - f0)
-        halus = t * t * (3 - 2 * t)
-        p = tunggu.lerp(ambang, halus if maju else 1 - halus)
-        p.z += 0.012 * abs(math.sin(math.pi * langkah * t))
-        akar.location = p
-        akar.keyframe_insert("location", frame=f)
 
 
 def shot67(m, arm, kol_kurir, kol_anak):
@@ -512,9 +499,18 @@ def shot67(m, arm, kol_kurir, kol_anak):
     akar, api, lampu = anak.buat_anak(kol_anak, kota.TITIK["lantai_dalam"], arah_anak)
     anak.goyang_api(api, lampu, s6.frame_mulai, s7.frame_selesai)
     # Daun pintu berayun ke dalam rumah, jadi anak menunggu di luar jangkauan
-    # ayunannya, baru melangkah ke ambang setelah pintu hampir terbuka penuh.
+    # ayunannya, baru berjalan ke ambang setelah pintu hampir terbuka penuh.
     # Sebelum pintu menutup di shot 8, anak mundur lagi ke tempat yang sama.
-    _langkah_anak(akar, luar, ANAK_MAJU[0], ANAK_MAJU[1], maju=True)
-    _langkah_anak(akar, luar, ANAK_MUNDUR[0], ANAK_MUNDUR[1], maju=False)
+    # "Anak" tetap di ambang; yang berjalan adalah rangkanya (anak.jalan):
+    # kaki kiri dan kanan bergantian, sandal yang menapak diam di lantai.
+    rangka = bpy.data.objects["Anak_Rangka"]
+    anak.berdiri(rangka, s6.frame_mulai, -ANAK_TUNGGU)
+    import json
+    jadwal = []
+    for nama, (f0, f1), dari, ke in (("maju", ANAK_MAJU, -ANAK_TUNGGU, 0.0),
+                                     ("mundur", ANAK_MUNDUR, 0.0, -ANAK_TUNGGU)):
+        for sisi, a, b, _, _ in anak.jalan(rangka, f0, f1, dari, ke):
+            jadwal.append([nama, sisi, a, b])
+    rangka["langkah"] = json.dumps(jadwal)  # dibaca cek.py --langkah-anak
     _anak_siluet(kol_anak)
     scene.frame_set(1)

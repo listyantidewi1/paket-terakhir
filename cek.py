@@ -9,6 +9,9 @@ Jalankan (setelah bangun.py):
 --motor : motor dari depan-kanan ke cek/motor.png
 --kurir : kurir dari samping (kanan) ke cek/kurir.png
 --hp    : layar HP dari dekat ke cek/hp.png
+--langkah-anak : anak dari samping, tiga frame per langkah (angkat, tengah, tapak),
+          di set sementara (lantai bergaris 10 cm, kaki kiri merah, kanan biru),
+          ke cek/langkah_anak.png. Tidak menyimpan apa pun ke film.blend.
 Simulasi kain (ponco) dihitung berurutan dari awal cache-nya sebelum render.
 
 Hasil: cek/frame_XXXX.png dan cek/lembar.png.
@@ -16,6 +19,7 @@ Setiap gambar diberi cap nomor shot dan frame (fitur stamp Blender),
 lalu disusun menjadi satu lembar dengan numpy, tanpa pustaka tambahan.
 """
 
+import math
 import os
 import sys
 import time
@@ -163,10 +167,10 @@ def baca_piksel(jalur):
     return px.reshape(h, w, 4)  # baris 0 = bawah gambar
 
 
-def susun_lembar(jalur_semua):
+def susun_lembar(jalur_semua, nama="lembar.png", kolom_maks=KOLOM):
     gambar = [baca_piksel(j) for j in jalur_semua]
     h, w = gambar[0].shape[:2]
-    kolom = min(KOLOM if len(gambar) > 4 else 2, len(gambar))
+    kolom = min(kolom_maks if len(gambar) > 4 else 2, len(gambar))
     baris = (len(gambar) + kolom - 1) // kolom
     W = kolom * w + (kolom + 1) * CELAH
     H = baris * h + (baris + 1) * CELAH
@@ -180,7 +184,7 @@ def susun_lembar(jalur_semua):
 
     img = bpy.data.images.new("lembar", W, H, alpha=True)
     img.pixels.foreach_set(lembar.ravel())
-    img.filepath_raw = os.path.join(FOLDER, "lembar.png")
+    img.filepath_raw = os.path.join(FOLDER, nama)
     img.file_format = "PNG"
     img.save()
     print(f"[cek] lembar kontak: {img.filepath_raw} ({W}x{H}, {len(gambar)} frame)")
@@ -233,6 +237,97 @@ def render_dekat(scene, frame, jenis):
     print(f"[cek] {scene.render.filepath}")
 
 
+def cek_langkah_anak(scene):
+    """Anak dari samping kanannya, tiga frame per langkah, di set sementara."""
+    import json
+    from mathutils import Vector
+    rangka = bpy.data.objects["Anak_Rangka"]
+    akar = bpy.data.objects["Anak"]
+    jadwal = json.loads(rangka["langkah"])
+    # Hanya koleksi Anak yang dirender (kurir, pintu, rumah dikecualikan dari view layer)
+    for lc in bpy.context.view_layer.layer_collection.children:
+        lc.exclude = lc.name != "Anak"
+    for o in scene.collection.objects:
+        o.hide_render = True
+    # Bahan cek: badan abu-abu, kaki kiri merah, kaki kanan biru (bahan siluet asli hampir hitam)
+    def bahan(nama, warna):
+        b = bpy.data.materials.new(nama)
+        b.use_nodes = True
+        b.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (*warna, 1)
+        return b
+    sil = bpy.data.objects["Anak_Siluet_siluet"]
+    me = sil.data
+    me.materials.clear()
+    for b in (bahan("cek_badan", (0.45, 0.45, 0.45)), bahan("cek_kiri", (0.7, 0.12, 0.1)),
+              bahan("cek_kanan", (0.1, 0.25, 0.75))):
+        me.materials.append(b)
+    grup = {g.index: g.name for g in sil.vertex_groups}
+    sisi_titik = []
+    for v in me.vertices:
+        nama = max(v.groups, key=lambda g: g.weight, default=None)
+        nm = grup.get(nama.group, "badan") if nama else "badan"
+        sisi_titik.append(1 if nm.endswith(".L") else 2 if nm.endswith(".R") else 0)
+    for p in me.polygons:
+        p.material_index = max(sisi_titik[i] for i in p.vertices)
+    # Lantai bergaris setiap 10 cm (koordinat anak: +y ke depan)
+    M = akar.matrix_world
+    mesh = bpy.data.meshes.new("cek_lantai")
+    v, f = [], []
+    for i in range(-14, 6):
+        y0, y1 = i * 0.1, i * 0.1 + (0.1 if i % 2 == 0 else 0.1)
+        n = len(v)
+        v += [M @ Vector((x, y, -0.002)) for x, y in ((-0.6, y0), (0.6, y0), (0.6, y1), (-0.6, y1))]
+        f.append((n, n + 1, n + 2, n + 3))
+    mesh.from_pydata([tuple(p) for p in v], [], f)
+    gelap, terang = bahan("cek_lantai_a", (0.75, 0.72, 0.65)), bahan("cek_lantai_b", (0.35, 0.33, 0.3))
+    mesh.materials.append(gelap)
+    mesh.materials.append(terang)
+    for i, p in enumerate(mesh.polygons):
+        p.material_index = i % 2
+    lantai = bpy.data.objects.new("cek_lantai", mesh)
+    scene.collection.objects.link(lantai)
+    # Cahaya matahari dan latar abu-abu
+    matahari = bpy.data.objects.new("cek_matahari", bpy.data.lights.new("cek_matahari", "SUN"))
+    matahari.data.energy = 3.0
+    scene.collection.objects.link(matahari)
+    matahari.rotation_euler = (M.to_3x3() @ Vector((0.6, -0.3, 1.0))).to_track_quat("Z", "Y").to_euler()
+    dunia = bpy.data.worlds.new("cek_dunia")
+    dunia.use_nodes = True
+    dunia.node_tree.nodes["Background"].inputs["Color"].default_value = (0.25, 0.27, 0.3, 1)
+    dunia.node_tree.nodes["Background"].inputs["Strength"].default_value = 0.6
+    scene.world = dunia
+    # Kamera ortografis dari samping kanan anak (+x lokal), memuat seluruh jalur
+    data = bpy.data.cameras.new("cek_samping")
+    data.type = "ORTHO"
+    data.ortho_scale = 2.3  # lebar 2,3 m, tinggi 1,3 m: anak utuh dan lantai terlihat
+    cam = bpy.data.objects.new("cek_samping", data)
+    scene.collection.objects.link(cam)
+    # sedikit dari atas (sekitar 17 derajat) supaya garis lantai di bawah sandal terlihat
+    cam.location = M @ Vector((3.0, -0.35, 1.5))
+    cam.rotation_euler = ((M @ Vector((0, -0.35, 0.58))) - cam.location).to_track_quat("-Z", "Y").to_euler()
+    scene.timeline_markers.clear()
+    scene.camera = cam
+    for o in bpy.data.cameras:
+        o.dof.use_dof = False
+    scene.render.use_motion_blur = False
+
+    jalur, sudah = [], set()
+    for k, (arah, sisi, a, b) in enumerate(jadwal):
+        nomor = k % 4 + 1
+        for f, tahap in ((math.floor(a) + 1, "angkat"), (round((a + b) / 2), "tengah"), (math.ceil(b), "tapak")):
+            if f in sudah:
+                continue
+            sudah.add(f)
+            scene.frame_set(f)
+            scene.render.stamp_note_text = (f"frame {f}  {arah} langkah {nomor}  kaki "
+                                            f"{'kiri (merah)' if sisi == 'L' else 'kanan (biru)'}: {tahap}")
+            scene.render.filepath = os.path.join(FOLDER, "langkah_anak", f"frame_{f:04d}.png")
+            bpy.ops.render.render(write_still=True)
+            jalur.append(scene.render.filepath)
+            print(f"[cek] {scene.render.filepath}")
+    susun_lembar(jalur, "langkah_anak.png", kolom_maks=6)
+
+
 def main():
     if not os.path.exists(BERKAS):
         sys.exit("[cek] film.blend belum ada. Jalankan dulu: "
@@ -241,6 +336,11 @@ def main():
     os.makedirs(FOLDER, exist_ok=True)
 
     arg = argumen()
+    if "--langkah-anak" in arg:
+        scene = bpy.context.scene
+        atur_render_kecil(scene)
+        cek_langkah_anak(scene)  # berkas tidak disimpan
+        return
     dekat = [j for j in DEKAT if f"--{j}" in arg]
     arg = [a for a in arg if a.lstrip("-") not in DEKAT and a != "--tegak"]
     if "--shot" in arg:

@@ -639,11 +639,33 @@ def set_waktu(scene, t):
     scene.frame_set(i, subframe=t - i)
 
 
+SAMPEL_MESH = 20  # tubuh yang dibengkokkan rangka: setiap titik ke-20 mesh hasil evaluasi
+
+
 def titik_gerak(scene):
-    """Titik yang mewakili benda bergerak: sudut kotak batas objek bergerak dan
-    pangkal/ujung tulang armature (kurir, kucing). Mengembalikan (nama per titik, array)."""
+    """Titik yang mewakili benda bergerak: sudut kotak batas objek bergerak, titik
+    mesh hasil evaluasi untuk tubuh yang dibengkokkan (kurir, kucing, anak),
+    posisi api dan lampu lilin, serta pangkal/ujung tulang armature.
+    Mengembalikan (nama per titik, array)."""
     nama, P = [], []
+    dg = bpy.context.evaluated_depsgraph_get()
     for o in scene.objects:
+        if o.type in ("MESH", "LIGHT") and o.name.startswith(("Api_Lilin", "Lampu_Lilin")):
+            nama.append(o.name)
+            P.append(o.matrix_world.translation.copy())
+            continue
+        if o.type == "MESH" and kelompok_dari(o.name) in ("kurir", "kucing", "anak"):
+            oe = o.evaluated_get(dg)
+            me = oe.to_mesh()
+            M = oe.matrix_world
+            co = np.empty(len(me.vertices) * 3)
+            me.vertices.foreach_get("co", co)
+            Mn = np.array(M)
+            for v in co.reshape(-1, 3)[::SAMPEL_MESH] @ Mn[:3, :3].T + Mn[:3, 3]:
+                nama.append(o.name)
+                P.append(Vector(v))
+            oe.to_mesh_clear()
+            continue
         if o.type == "ARMATURE" and o.pose:
             M = o.matrix_world
             for b in o.pose.bones:
@@ -758,6 +780,13 @@ def periksa_rana(scene, frames):
     return temuan, ukur, biasa, sampel
 
 
+def _per_objek(k):
+    hasil = {}
+    for i, n in enumerate(k["nama"]):
+        hasil.setdefault(n, []).append(i)
+    return {n: k["P"][ix] for n, ix in hasil.items()}
+
+
 def banding_rana(sampel_a, sampel_b, tol=1e-4):
     """Frame yang keadaan kamera atau benda bergeraknya di dalam rana berbeda antara dua versi."""
     beda = []
@@ -774,8 +803,13 @@ def banding_rana(sampel_a, sampel_b, tol=1e-4):
             if np.abs(ka["cam"] - kb["cam"]).max() > tol or abs(ka["lensa"] - kb["lensa"]) > tol:
                 alasan.append("gerak kamera")
                 break
-            if ka["nama"] != kb["nama"] or np.abs(ka["P"] - kb["P"]).max() > tol:
-                alasan.append("gerak benda")
+            # dibandingkan per objek yang ada di kedua versi (tulang rangka baru tidak
+            # ada di versi lama; pengaruhnya terlihat lewat titik mesh)
+            pa, pb_ = _per_objek(ka), _per_objek(kb)
+            beda_obj = [n for n in pa.keys() & pb_.keys()
+                        if pa[n].shape != pb_[n].shape or np.abs(pa[n] - pb_[n]).max() > tol]
+            if beda_obj:
+                alasan.append("gerak benda: " + ", ".join(sorted(beda_obj)[:3]))
                 break
         if alasan:
             beda.append((a["frame"], ", ".join(dict.fromkeys(alasan))))

@@ -76,7 +76,11 @@ def _bahan():
 
 
 def buat_anak(kol, lokasi, arah_derajat):
-    """Siluet anak (sekitar 1,1 m) memegang kue di depan dada. Kembalikan (anak, api, lampu)."""
+    """Siluet anak (sekitar 1,1 m) memegang kue di depan dada. Kembalikan (anak, api, lampu).
+
+    Tubuh digerakkan rangka "Anak_Rangka" (anak dari "Anak"); kue, lilin, dan
+    lampu lilin menempel di tulang badan. Jalan dengan jalan().
+    """
     _bahan()
     akar = bpy.data.objects.new("Anak", None)
     kol.objects.link(akar)
@@ -89,11 +93,16 @@ def buat_anak(kol, lokasi, arah_derajat):
     k = Kanvas("Anak_Siluet", kol)
     g = k["siluet"]
     condong = _condong(CONDONG)
+    kaki = {}  # sisi -> (rentang titik celana, rentang titik sandal); untuk bobot rangka
     for x in (-0.065, 0.065):  # celana tidur: pinggul, lutut (sedikit ke depan), pergelangan
+        sisi = "L" if x < 0 else "R"
+        a = len(g.v)
         _loft(g, [(Vector((x, -0.012, 0.55)), 0.075, 0.075, 0.0), (Vector((x, 0.02, 0.42)), 0.068, 0.07, 0.003),
                   (Vector((x, 0.055, 0.29)), 0.062, 0.064, 0.004), (Vector((x, 0.035, 0.17)), 0.062, 0.064, 0.004),
                   (Vector((x, 0.01, 0.05)), 0.066, 0.068, 0.007)])
+        b = len(g.v)
         g.bola((x * 1.05, 0.045, 0.032), (0.045, 0.085, 0.032), rimbun=0)  # sandal rumah
+        kaki[sisi] = (range(a, b), range(b, len(g.v)))
     g.bola((0, 0.0, 0.53), (0.13, 0.095, 0.08), rimbun=0)  # pinggul
     # Baju tidur: lebar dan longgar, ujung bawah bergelombang
     _loft(g, [(condong(Vector((0, 0, z))), rx, ry, gel) for z, rx, ry, gel in (
@@ -117,8 +126,10 @@ def buat_anak(kol, lokasi, arah_derajat):
                   (siku.lerp(tangan, 0.85), 0.045, 0.045, 0.003)])
         g.bola(tangan, (0.03, 0.04, 0.022), rimbun=0)
     k.selesai()
+    rangka = _rangka(kol, akar)
     for o in k.kol.objects:
         o.parent = akar
+        _bobot(o, rangka, kaki)
         sub = o.modifiers.new("Halus", "SUBSURF")
         sub.levels = sub.render_levels = 2
 
@@ -136,7 +147,7 @@ def buat_anak(kol, lokasi, arah_derajat):
         lilin_pos.append(p + Vector((0, 0, 0.065)))
     kue.selesai()
     for o in kue.kol.objects:
-        o.parent = akar
+        _ke_badan(o, rangka)
 
     # Api dan lampu lilin; lampu hanya menerangi kue (light linking)
     terima = bpy.data.collections.new("Kue_Diterangi_Lilin")
@@ -152,8 +163,8 @@ def buat_anak(kol, lokasi, arah_derajat):
         mesh.shade_smooth()
         api = bpy.data.objects.new(f"Api_Lilin_{i}", mesh)
         kol.objects.link(api)
-        api.parent = akar
         api.location = p + Vector((0, 0, 0.002))
+        _ke_badan(api, rangka)
         # Api terlihat kamera, tetapi tidak menerangi permukaan lain (wajah anak)
         api.visible_diffuse = False
         api.visible_glossy = False
@@ -166,14 +177,226 @@ def buat_anak(kol, lokasi, arah_derajat):
         data.shadow_soft_size = 0.004
         lampu = bpy.data.objects.new(f"Lampu_Lilin_{i}", data)
         kol.objects.link(lampu)
-        lampu.parent = akar
         lampu.location = p + Vector((0, 0, 0.014))
+        _ke_badan(lampu, rangka)
         lampu.light_linking.receiver_collection = terima
         api_list.append(api)
         lampu_list.append(lampu)
     for item in terima.collection_objects:
         item.light_linking.link_state = "INCLUDE"
     return akar, api_list, lampu_list
+
+
+# --------------------------------------------------------------------------
+# Rangka dan langkah
+
+PANGGUL_X = 0.065  # jarak kaki dari tengah
+UJUNG_KAKI = 0.11  # ujung sandal di depan pergelangan (y)
+
+
+def _titik_kaki(sisi):
+    x = -PANGGUL_X if sisi == "L" else PANGGUL_X
+    return {"pinggul": Vector((x, -0.012, 0.55)), "lutut": Vector((x, 0.055, 0.29)),
+            "tumit": Vector((x, 0.01, 0.05)), "ujung": Vector((x * 1.05, UJUNG_KAKI, 0.03))}
+
+
+BADAN = (Vector((0, 0, 0.5)), Vector((0, 0, 0.85)))  # poros goyang badan di pinggul
+
+
+def _rangka(kol, akar):
+    """Tulang: badan (pinggul ke leher), paha, betis, telapak per kaki.
+
+    Telapak menempel pada tulang sasaran "ik" (tanpa induk), dan betis memakai
+    IK ke sasaran itu. Selama sasaran diam, telapak benar-benar diam di lantai
+    dan lutut menekuk sendiri mengikuti pinggul.
+    """
+    data = bpy.data.armatures.new("Anak_Rangka")
+    arm = bpy.data.objects.new("Anak_Rangka", data)
+    kol.objects.link(arm)
+    arm.parent = akar
+    data.display_type = "STICK"
+    lapisan = bpy.context.view_layer
+    for o in lapisan.objects:
+        o.select_set(False)
+    lapisan.objects.active = arm
+    arm.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = data.edit_bones
+
+    def tulang(nama, kepala, ekor, induk=None, deform=True, sambung=False):
+        b = eb.new(nama)
+        b.head, b.tail, b.roll = kepala, ekor, 0.0
+        b.use_deform = deform
+        if induk:
+            b.parent = eb[induk]
+            b.use_connect = sambung
+        return b
+    tulang("badan", *BADAN)
+    for s in ("L", "R"):
+        t = _titik_kaki(s)
+        tulang(f"paha.{s}", t["pinggul"], t["lutut"], "badan")
+        tulang(f"betis.{s}", t["lutut"], t["tumit"], f"paha.{s}", sambung=True)
+        tulang(f"ik.{s}", t["tumit"], t["tumit"] + Vector((0, 0, 0.1)), deform=False)
+        tulang(f"telapak.{s}", t["tumit"], t["ujung"], f"ik.{s}")
+        tulang(f"lutut.{s}", t["lutut"] + Vector((0, 0.5, 0)), t["lutut"] + Vector((0, 0.5, 0.1)), "badan",
+               deform=False)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    pb = arm.pose.bones
+    for s in ("L", "R"):
+        ik = pb[f"betis.{s}"].constraints.new("IK")
+        ik.target, ik.subtarget = arm, f"ik.{s}"
+        ik.pole_target, ik.pole_subtarget = arm, f"lutut.{s}"
+        ik.pole_angle = math.radians(90)  # lutut menekuk ke depan (ke arah tiang), sama dengan mesh
+        ik.chain_count = 2
+    return arm
+
+
+def _bobot(obj, arm, kaki):
+    """Badan, lengan, kepala ikut tulang badan; celana ikut paha dan betis
+    (berbaur di lutut); sandal ikut telapak."""
+    n = len(obj.data.vertices)
+    grup = {nm: obj.vertex_groups.new(name=nm) for nm in
+            ["badan"] + [f"{t}.{s}" for s in ("L", "R") for t in ("paha", "betis", "telapak")]}
+    di_kaki = set()
+    for s, (celana, sandal) in kaki.items():
+        for i in celana:
+            z = obj.data.vertices[i].co.z
+            w = min(max((0.36 - z) / 0.14, 0.0), 1.0)  # 0 di atas lutut, 1 di bawahnya
+            if w < 1:
+                grup[f"paha.{s}"].add([i], 1 - w, "REPLACE")
+            if w > 0:
+                grup[f"betis.{s}"].add([i], w, "REPLACE")
+            di_kaki.add(i)
+        grup[f"telapak.{s}"].add(list(sandal), 1.0, "REPLACE")
+        di_kaki.update(sandal)
+    grup["badan"].add([i for i in range(n) if i not in di_kaki], 1.0, "REPLACE")
+    mod = obj.modifiers.new("Rangka", "ARMATURE")
+    mod.object = arm
+
+
+def _ke_badan(obj, arm):
+    """Tempelkan objek pada tulang badan tanpa mengubah letaknya (kue tetap di tangan)."""
+    from mathutils import Matrix
+    b = arm.data.bones["badan"]
+    obj.parent = arm
+    obj.parent_type = "BONE"
+    obj.parent_bone = "badan"
+    obj.matrix_parent_inverse = (b.matrix_local @ Matrix.Translation((0, b.length, 0))).inverted()
+
+
+def _mulus(t):
+    return t * t * (3 - 2 * t)
+
+
+def rencana_langkah(f0, f1, y0, y1, jumlah=4, ganda=0.25):
+    """Jadwal langkah kecil: kaki kiri dan kanan bergantian, kedua kaki rapat di
+    awal dan akhir. Setiap langkah: (sisi, frame angkat, frame tapak, y dari, y ke).
+
+    Langkah pertama dan terakhir setengah panjang, jadi jarak antar kaki saat
+    keduanya menapak = (y1 - y0) / (jumlah - 1); untuk 0,85 m dan 4 langkah 28 cm,
+    langkah kecil anak umur enam tahun yang membawa kue. `ganda` = lama kedua
+    kaki menapak di antara dua langkah, sebagai bagian dari lama satu ayunan.
+    """
+    satuan = (f1 - f0) / (jumlah + ganda * (jumlah + 1))
+    jarak = (y1 - y0) / (jumlah - 1)
+    tapak = {"L": y0, "R": y0}
+    hasil = []
+    for k in range(jumlah):
+        sisi = "L" if k % 2 == 0 else "R"
+        ke = y1 if k >= jumlah - 2 else y0 + jarak * (k + 1)
+        a = f0 + ganda * satuan * (k + 1) + satuan * k
+        hasil.append((sisi, a, a + satuan, tapak[sisi], ke))
+        tapak[sisi] = ke
+    return hasil
+
+
+ANGKAT = 0.04   # tinggi ayunan sandal
+NAIK = 0.012    # badan naik di tengah langkah (satu kaki menapak)
+TURUN = 0.025   # pinggul turun sedikit (lutut menekuk) selama berjalan
+GOYANG = 0.016  # pinggul bergeser ke kaki yang menapak
+MIRING = 1.5    # derajat badan miring ke kaki yang menapak (kue tetap hampir datar)
+
+
+def keadaan_jalan(t, rencana, y0, y1):
+    """Pose pada waktu t (boleh pecahan): y tiap sandal, angkat, dan pinggul."""
+    kaki = {"L": [y0, 0.0], "R": [y0, 0.0]}
+    goyang = naik = 0.0
+    for sisi, a, b, dari, ke in rencana:
+        arah = -1.0 if sisi == "L" else 1.0  # badan condong ke kaki yang menapak (lawan)
+        if t >= b:
+            kaki[sisi] = [ke, 0.0]
+        elif t > a:
+            p = (t - a) / (b - a)
+            kaki[sisi] = [dari + (ke - dari) * _mulus(p), ANGKAT * math.sin(math.pi * p)]
+            naik += NAIK * math.sin(math.pi * p)
+        # pinggul pindah ke kaki yang menapak sedikit sebelum kaki lain terangkat
+        lebar = (b - a) * 0.35
+        if a - lebar < t < b + lebar:
+            p = (t - (a - lebar)) / (b - a + 2 * lebar)
+            goyang += -arah * GOYANG * math.sin(math.pi * p)
+    awal, akhir = rencana[0][1], rencana[-1][2]
+    satuan = rencana[0][2] - rencana[0][1]
+    # pinggul turun selama berjalan, naik lagi saat berhenti
+    jalan = min(max((t - (awal - satuan)) / satuan, 0), 1) * min(max(((akhir + satuan) - t) / satuan, 0), 1)
+    return kaki, goyang, naik - TURUN * _mulus(jalan)
+
+
+def jalan(arm, f0, f1, y0, y1, langkah=4):
+    """Anak berjalan dari y0 ke y1 (koordinat lokal, +y = ke depan) antara f0 dan f1.
+
+    Kunci per frame: sasaran IK tiap sandal (diam saat menapak), dan tulang badan
+    (maju, naik turun, bergeser dan sedikit miring ke kaki yang menapak).
+    Pinggul maju mengikuti rata-rata kedua sandal yang dihaluskan.
+    Mengembalikan rencana langkah.
+    """
+    from mathutils import Matrix
+    rencana = rencana_langkah(f0, f1, y0, y1, langkah)
+    pb = arm.pose.bones
+
+    def y_pinggul(t):
+        # rata-rata kedua sandal, dihaluskan selebar setengah langkah supaya pinggul
+        # maju mulus tetapi tidak tertinggal (kaki depan tetap terjangkau)
+        n, jum = 9, 0.0
+        lebar = (rencana[0][2] - rencana[0][1]) * 0.5
+        for i in range(n):
+            u = t + lebar * (i / (n - 1) - 0.5)
+            k, _, _ = keadaan_jalan(u, rencana, y0, y1)
+            jum += (k["L"][0] + k["R"][0]) / 2
+        return jum / n
+
+    satuan = rencana[0][2] - rencana[0][1]
+    for f in range(math.floor(f0 - 2 * satuan), math.ceil(f1 + 2 * satuan) + 1):
+        kaki, goyang, naik = keadaan_jalan(f, rencana, y0, y1)
+        yp = y_pinggul(f)
+        miring = math.radians(MIRING) * goyang / GOYANG
+        b = arm.data.bones["badan"]
+        pb["badan"].matrix = (Matrix.Translation((goyang, yp, naik)) @ Matrix.Translation(b.head_local)
+                              @ Matrix.Rotation(miring, 4, "Y") @ Matrix.Translation(-b.head_local)
+                              @ b.matrix_local)
+        for s in ("L", "R"):
+            t = arm.data.bones[f"ik.{s}"]
+            pb[f"ik.{s}"].matrix = Matrix.Translation((0, kaki[s][0], kaki[s][1])) @ t.matrix_local
+        for nm in ("badan", "ik.L", "ik.R"):
+            pb[nm].keyframe_insert("location", frame=f)
+            pb[nm].keyframe_insert("rotation_quaternion", frame=f)
+    from bpy_extras import anim_utils
+    ad = arm.animation_data
+    for fc in anim_utils.action_get_channelbag_for_slot(ad.action, ad.action_slot).fcurves:
+        for kp in fc.keyframe_points:
+            kp.interpolation = "LINEAR"
+    return rencana
+
+
+def berdiri(arm, f, y):
+    """Kunci anak berdiri tegak dengan kedua kaki rapat di y pada frame f."""
+    from mathutils import Matrix
+    pb = arm.pose.bones
+    pb["badan"].matrix = Matrix.Translation((0, y, 0)) @ arm.data.bones["badan"].matrix_local
+    for s in ("L", "R"):
+        pb[f"ik.{s}"].matrix = Matrix.Translation((0, y, 0)) @ arm.data.bones[f"ik.{s}"].matrix_local
+    for nm in ("badan", "ik.L", "ik.R"):
+        pb[nm].keyframe_insert("location", frame=f)
+        pb[nm].keyframe_insert("rotation_quaternion", frame=f)
 
 
 def goyang_api(api_list, lampu_list, frame_awal, frame_akhir, langkah=2):
